@@ -1,0 +1,22 @@
+# Executable
+miit
+
+# System specific files
+*.exe
+*.dll
+*.so
+*.dylib
+.DS_Store
+
+# vim swap files
+*.swp
+*.swo
+*.swn
+*.swm
+
+# go:generate-ed sources
+*_gen.go
+
+# govendor packages
+vendor/*
+!vendor/vendor.json
