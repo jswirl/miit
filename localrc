@@ -6,5 +6,6 @@ export GIN_MODE=debug
 export DEBUG_REQUEST_BODY_SIZE=1024
 export SERVER_LISTEN_ADDRESS=localhost
 export SERVER_LISTEN_PORT=4096
+export MIIT_ASSETS_PATH=./www
 export MIIT_INDEX_PAGE_PATH=./www/index.html
 export MIIT_JAVASCRIPT_PATH=./www/miit.js

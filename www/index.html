@@ -2,12 +2,13 @@
     <head>
         <meta charset="utf-8">
         <title> miit </title>
-        <script src="miit.js"></script>
+        <script src="/miit/miit.js"></script>
         <style type="text/css">
             #center { position: absolute; top: 50%; width: 99%; }
+            #video { width: 1280; height: 720; }
         </style>
     </head>
-    <body bgcolor="black">
+    <body bgcolor="white">
         <div id="center">
             <center>
                 <video id="LocalVideo" autoplay muted></video>
@@ -15,7 +16,8 @@
             </center>
         </div>
         <br/>
-        <font color="white">Status: </font><br>
+        <font color="black">Status: </font>
+        <input type="text" id='Status' value='Idle' size='100' style='background-color: white; black: white; border: 1px;' readonly> &nbsp;  &nbsp;  &nbsp;
         <script type="text/javascript"> main(); </script>
         <br><br>
     </body>

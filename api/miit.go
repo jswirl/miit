@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -12,39 +13,47 @@ import (
 
 // miiting is the object representing a miiting.
 type miiting struct {
-	Initiator string              `json:"initiator"`
-	Timestamp time.Time           `json:"timestamp"`
-	offer     *sessionDescription `json:"-"`
-	answer    *sessionDescription `json:"_"`
-	offerCtx  *gin.Context        `json:"-"`
-	answerCtx *gin.Context        `json:"-"`
+	Initiator  string                   `json:"initiator"`
+	Timestamp  time.Time                `json:"timestamp"`
+	offer      *sessionDescription      `json:"-"`
+	answer     *sessionDescription      `json:"_"`
+	offerChan  chan *sessionDescription `json:"-"`
+	answerChan chan *sessionDescription `json:"-"`
 }
 
 // sessionDescription is the model of a offer/answer session description.
 type sessionDescription struct {
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	Description   string `json:"description"`
-	IceCandidates string `json:"ice_candidates"`
+	Name          string           `json:"name"`
+	Type          string           `json:"type"`
+	Description   *json.RawMessage `json:"description"`
+	IceCandidates *json.RawMessage `json:"ice_candidates"`
 }
 
 // miitings contains all current
 var miitings sync.Map
 
 // miit main HTML index page and main JavaScript file path.
+var miitAssetsPath string
 var indexPagePath string
 var scriptPath string
 
 func init() {
 	// Load asset configuration paths.
+	miitAssetsPath = config.GetString("MIIT_ASSETS_PATH")
 	indexPagePath = config.GetString("MIIT_INDEX_PAGE_PATH")
 	scriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
 
 	// Obtain the root router group.
 	root := GetRoot()
 
+	// Create router group for miit assets.
+	// TODO: remove this when HTTP/2 server push is available.
+	miitGroup := root.Group("miit")
+	miitGroup.Static("/", miitAssetsPath)
+
 	// Create router group for miiting module and register handlers.
 	miitingsGroup := root.Group("miitings")
+	miitingsGroup.Use(middleware.Body(1024))
 	miitingsGroup.GET(":miiting_id", GetMiiting)
 	miitingsGroup.POST(":miiting_id", CreateMiiting)
 	miitingsGroup.DELETE(":miiting_id", AdjournMiiting)
@@ -52,8 +61,14 @@ func init() {
 	miitingsGroup.POST(":miiting_id/:sdp_type", SetSDP)
 }
 
-// GetMiiting is the handler for pushing the miit HTML/JavaScript to clients.
+// GetMiiting returns the main index page for requests.
 func GetMiiting(ctx *gin.Context) {
+	// We return the main index page no matter the requested resource.
+	ctx.File(indexPagePath)
+}
+
+// PushMiitAssets is the handler for pushing the miit assets to clients.
+func PushMiitAssets(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
 
@@ -68,7 +83,7 @@ func GetMiiting(ctx *gin.Context) {
 	// Get the server push instance from context.
 	pusher := ctx.Writer.Pusher()
 	if pusher == nil {
-		logger.Error("Failed to get HTTP2 server push instance")
+		logger.Error("Failed to get HTTP/2 server push instance")
 		ctx.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -102,7 +117,7 @@ func CreateMiiting(ctx *gin.Context) {
 
 	// Get miiting initiator name from request body.
 	body := map[string]string{}
-	if err := ctx.BindJSON(body); err != nil {
+	if err := ctx.BindJSON(&body); err != nil {
 		logger.Error("Failed to unmarshal miiting creation request: %v", err)
 		ctx.AbortWithStatus(http.StatusBadRequest)
 		return
@@ -110,12 +125,12 @@ func CreateMiiting(ctx *gin.Context) {
 
 	// Create and prepare the new miiting.
 	value := miiting{
-		Initiator: body["initiator"],
-		Timestamp: time.Now(),
-		offer:     nil,
-		answer:    nil,
-		offerCtx:  nil,
-		answerCtx: nil,
+		Initiator:  body["initiator"],
+		Timestamp:  time.Now(),
+		offer:      nil,
+		answer:     nil,
+		offerChan:  nil,
+		answerChan: nil,
 	}
 
 	// Check and create the miiting if it doesn't exist.
@@ -174,27 +189,34 @@ func GetSDP(ctx *gin.Context) {
 		ctx.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	miiting := value.(miiting)
+	miiting := value.(*miiting)
 
 	// Get the requested SDP from our miiting.
 	var sdp *sessionDescription
+	var sdpChan chan *sessionDescription
 	if sdpType == "offer" {
-		sdp = miiting.offer
-		miiting.offerCtx = ctx.Copy()
+		if sdp = miiting.offer; sdp == nil {
+			miiting.offerChan = make(chan *sessionDescription)
+			sdpChan = miiting.offerChan
+		}
 	} else if sdpType == "answer" {
-		sdp = miiting.answer
-		miiting.answerCtx = ctx.Copy()
+		if sdp = miiting.answer; sdp == nil {
+			miiting.answerChan = make(chan *sessionDescription)
+			sdpChan = miiting.answerChan
+		}
 	} else {
 		logger.Error("Invalid sdp_type: [%s]", sdpType)
 		ctx.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
-	// Return the requested SDP if it exists, otherwise leave our
-	// *gin.Context for a deferred write when it's ready in the future.
-	if sdp != nil {
-		ctx.JSON(http.StatusOK, sdp)
+	// Wait for the description if it has not been submitted yet.
+	if sdp == nil {
+		sdp = <-sdpChan
 	}
+
+	// Return the requested SDP.
+	ctx.JSON(http.StatusOK, sdp)
 }
 
 // SetSDP is the handler for requests setting a session description for a role.
@@ -233,20 +255,20 @@ func SetSDP(ctx *gin.Context) {
 		ctx.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	miiting := value.(miiting)
+	miiting := value.(*miiting)
 
 	// Get the requested SDP from our miiting.
 	if sdpType == "offer" {
-		// Write the submitted offer to the deferred context if one is waiting.
+		// Write the submitted offer to the offer channel if one is waiting.
 		miiting.offer = &sdp
-		if miiting.offerCtx != nil {
-			miiting.offerCtx.JSON(http.StatusOK, &sdp)
+		if miiting.offerChan != nil {
+			miiting.offerChan <- &sdp
 		}
 	} else if sdpType == "answer" {
-		// Write the submitted answer to the deferred context if one is waiting.
+		// Write the submitted answer to the answer channel if one is waiting.
 		miiting.answer = &sdp
-		if miiting.answerCtx != nil {
-			miiting.answerCtx.JSON(http.StatusOK, &sdp)
+		if miiting.answerChan != nil {
+			miiting.answerChan <- &sdp
 		}
 	} else {
 		logger.Error("Invalid sdp_type: %s", sdpType)

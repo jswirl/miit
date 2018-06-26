@@ -10,19 +10,20 @@ var name = 'anonymous';
 var isInitiator = true;
 
 /* WebRTC components and variables */
-var getUserMedia, rtcPeerConnection;
+var rtcPeerConnection;
 var LocalVideo, RemoteVideo;
 var localIceCandidates = [], remoteIceCandidates = [];
 
 /* Media Constraints */
 var mediaConstraints = {
     audio: true,
-    video: true,
+    //video: true,
     optional: {
         DtlsSrtpKeyAgreement: true,
     },
     mandatory: {
         OfferToReceiveAudio: true,
+        //OfferToReceiveVideo: true,
         width: 1280,
         height: 720,
         minFrameRate: 30,
@@ -70,19 +71,6 @@ function initialize() {
         window.mozRTCSessionDescription ||
         window.webkitRTCSessionDescription;
     window.onbeforeunload = adjournMiiting;
-
-    // Check if mediaDevices is available.
-	if (navigator.mediaDevices === undefined) {
-  		navigator.mediaDevices = {};
-	}
-
-    // Polyfill to setup browser Media API function.
-    getUserMedia =
-        navigator.mediaDevices.getUserMedia ||
-        navigator.getUserMedia ||
-        navigator.mozGetUserMedia ||
-        navigator.webkitGetUserMedia || 
-        navigator.msGetUserMedia;
 }
 
 function run() {
@@ -90,25 +78,25 @@ function run() {
     var continueBasedOnRole = function(isInitiator) {
         if (isInitiator) {
             // We are the initiator of the miiting.
-            return rtcPeerConnection.createOffer().
-                then(rtcPeerConnection.setLocalDescription, errorHandler).
+            return createOffer().catch(errorHandler).
+                then(setLocalDescription, errorHandler).
                 then(sendLocalDescription, errorHandler).
                 then(requestRemoteDescription, errorHandler).
                 then(receiveRemoteDescription, errorHandler).
-                then(rtcPeerConnection.setRemoteDescription, errorHandler);
+                then(setRemoteDescription, errorHandler);
         } else {
             // We are the joiner of the miiting.
-            return requestRemoteDescription().
+            return requestRemoteDescription().catch(errorHandler).
                 then(receiveRemoteDescription, errorHandler).
-                then(rtcPeerConnection.setRemoteDescription, errorHandler).
-                then(rtcPeerConnection.createAnswer, errorHandler).
-                then(rtcPeerConnection.setLocalDescription, errorHandler).
+                then(setRemoteDescription, errorHandler).
+                then(createAnswer, errorHandler).
+                then(setLocalDescription, errorHandler).
                 then(sendLocalDescription, errorHandler);
         }
     };
 
     // Execute miiting setup by running sequence of chained functions.
-    getUserMedia(mediaConstraints).
+    navigator.mediaDevices.getUserMedia(mediaConstraints).
         then(setLocalMediaStream, errorHandler).
         then(createPeerConnection, errorHandler).
         then(tryCreateMiiting, errorHandler).
@@ -118,7 +106,7 @@ function run() {
 
 function setLocalMediaStream(localStream) {
     setStatus('Initialized browser Media API.');
-    LocalVideo.src = window.URL.createObjectURL(localStream);
+    LocalVideo.srcObject = localStream;
     return localStream;
 }
 
@@ -126,8 +114,9 @@ function createPeerConnection(localStream) {
     setStatus('Creating RTCPeerConnection...');
     rtcPeerConnection = new RTCPeerConnection(peerConnectionConfig);
     rtcPeerConnection.onicecandidate = onLocalIceCandidates;
-    rtcPeerConnection.addTrack(localStream);
     rtcPeerConnection.ontrack = onRemoteStream;
+    localStream.getTracks().forEach(
+        track => rtcPeerConnection.addTrack(track, localStream));
 }
 
 function tryCreateMiiting() {
@@ -163,13 +152,36 @@ function onLocalIceCandidates(event) {
     } else {
         setStatus('Gathering local ICE candidates...');
         localIceCandidates.push(event.candidate);
+        console.log(event.candidate);
     }
 }
 
 function onRemoteStream(event) {
+    setStatus('Received remote stream.');
     var remoteStream = event.streams[0];
-    RemoteVideo.src = window.URL.createObjectURL(remoteStream);
-    // rtcPeerConnection.addTrack(remoteStream);
+    RemoteVideo.srcObject = remoteStream;
+    remoteStream.getTracks().forEach(
+        track => rtcPeerConnection.addTrack(track, remoteStream));
+}
+
+function setLocalDescription(description) {
+    setStatus('Setting local description...');
+    return rtcPeerConnection.setLocalDescription(description);
+}
+
+function setRemoteDescription(description) {
+    setStatus('Setting remote description...');
+    return rtcPeerConnection.setRemoteDescription(description);
+}
+
+function createOffer() {
+    setStatus('Creating offer...');
+    return rtcPeerConnection.createOffer();
+}
+
+function createAnswer() {
+    setStatus('Creating answer...');
+    return rtcPeerConnection.createAnswer();
 }
 
 function sendLocalDescription() {
@@ -219,17 +231,15 @@ function request(method, url, body, async) {
         // Setup new request.
         var xhr = new XMLHttpRequest();
         xhr.open(method, url, async);
-        xhr.setRequestHeader("Content-type", "application/json");
+        xhr.setRequestHeader('Content-type', 'application/json');
 
         // Setup response handler.
         xhr.onload = function() {
             if (xhr.status >= 200 && xhr.status < 400)
-                resolve(xhr.response);
+                resolve(xhr);
             else {
-                var message = 'request to server failed'
-                document.getElementById('Status').value = message
-                console.log(message + xhr.response);
-                reject(xhr.status);
+                setStatus(xhr.responseText)
+                reject(xhr);
             }
         }
 
