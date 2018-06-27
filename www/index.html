@@ -4,21 +4,53 @@
         <title> miit </title>
         <script src="/miit/miit.js"></script>
         <style type="text/css">
-            #center { position: absolute; top: 50%; width: 99%; }
-            #video { width: 1280; height: 720; }
+            .container {
+                border-width: 1px; border-color: #404040; border-style: solid;
+                position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+                width: 640; height: 480; margin: auto; padding: 0;
+            }
+            .localcontainer {
+                border-width: 0; background: black; opacity: 1;
+                position: absolute; bottom: -1; right: -1;
+                width: 160; height: 120; margin: auto; padding: 0;
+            }
+            .remotecontainer {
+                border-width: 0; background: black; opacity: 1;
+                position: absolute; top: 0; left: 0;
+                width: 640; height: 480; margin: auto; padding: 0;
+            }
+            .localvideo {
+                background: black; opacity: 1;
+                border-width: 1px; border-color: #404040; border-style: solid;
+                position: absolute; bottom: 0; right: 0;
+                width: 160; height: 120; margin: 0; padding: 0;
+            }
+            .remotevideo {
+                border-width: 0; background: black; opacity: 1;
+                position: absolute; top: 0; left: 0;
+                width: 640; height: 480; margin: 0; padding: 0;
+            }
+            .localname {
+                position: absolute; top: 0; left: 2; padding: 1; z-index: 1;
+                font-family: "Courier New", Courier, Monospace; font-size: 10; color: lightgrey;
+            }
+            .remotename {
+                position: absolute; top: 0; left: 2; padding: 1; z-index: 1;
+                font-family: "Courier New", Courier, Monospace; font-size: 16; color: lightgrey;
+            }
         </style>
     </head>
-    <body bgcolor="white">
-        <div id="center">
-            <center>
-                <video id="LocalVideo" autoplay muted></video>
-                <video id="RemoteVideo" autoplay muted></video>
-            </center>
+    <body bgcolor="black">
+        <div class="container">
+            <div class="remotecontainer">
+                <div class="remotename" id="RemoteName"></div>
+                <video class="remotevideo" id="RemoteVideo" autoplay playsinline></video>
+            </div>
+            <div class="localcontainer">
+                <div class="localname" id="LocalName"></div>
+                <video class="localvideo" id="LocalVideo" autoplay playsinline></video>
+            </div>
         </div>
-        <br/>
-        <font color="black">Status: </font>
-        <input type="text" id='Status' value='Idle' size='100' style='background-color: white; black: white; border: 1px;' readonly> &nbsp;  &nbsp;  &nbsp;
         <script type="text/javascript"> main(); </script>
-        <br><br>
     </body>
 </html>

@@ -6,35 +6,27 @@ var apiUrl = window.location.href
 /* Our user name to be displayed */
 var name = 'anonymous';
 
+/* The token used to create a miiting. */
+var token = generateToken();
+
 /* Our role in the miiting session. */
 var isInitiator = true;
 
 /* WebRTC components and variables */
 var rtcPeerConnection;
-var LocalVideo, RemoteVideo;
-var localIceCandidates = [], remoteIceCandidates = [];
-
-/* Media Constraints */
-var mediaConstraints = {
-    audio: true,
-    //video: true,
-    optional: {
-        DtlsSrtpKeyAgreement: true,
-    },
-    mandatory: {
-        OfferToReceiveAudio: true,
-        //OfferToReceiveVideo: true,
-        width: 1280,
-        height: 720,
-        minFrameRate: 30,
-    },
-};
+var LocalVideo, LocalName, RemoteVideo, RemoteVideo;
+var localIceCandidates = [];
 
 /* ICE Server Configurations */
-var peerConnectionConfig = {'iceServers': [
-    {'url': 'stun:stun.l.google.com:19302'},
-    {'url': 'stun:stun.services.mozilla.com'},
-]}
+var peerConnectionConfig = {
+    iceServers: [
+        { url: 'stun:stun.l.google.com:19302' },
+        { url: 'stun:stun.services.mozilla.com' },
+    ],
+    bundlePolicy: 'max-compat',
+    iceTransportPolicy: 'all',
+
+}
 
 function main() {
     // Initialize browser Media API & DOM elements.
@@ -42,6 +34,7 @@ function main() {
 
     // Prompt user for name.
     name = prompt('Please enter your name:', name);
+    LocalName.innerHTML = name;
 
     // Start miiting setup sequence here.
     run();
@@ -51,6 +44,8 @@ function initialize() {
     // Prepare video elements.
     LocalVideo = document.getElementById('LocalVideo');
     RemoteVideo = document.getElementById('RemoteVideo');
+    LocalName= document.getElementById('LocalName');
+    RemoteName= document.getElementById('RemoteName');
 
     // Polyfill to setup browser WebRTC components.
     window.URL =
@@ -70,7 +65,9 @@ function initialize() {
         window.RTCSessionDescription ||
         window.mozRTCSessionDescription ||
         window.webkitRTCSessionDescription;
+    window.onunload = adjournMiiting;
     window.onbeforeunload = adjournMiiting;
+    window.onpagehide = adjournMiiting;
 }
 
 function run() {
@@ -95,36 +92,85 @@ function run() {
         }
     };
 
-    // Execute miiting setup by running sequence of chained functions.
-    navigator.mediaDevices.getUserMedia(mediaConstraints).
+    // Check if MediaDevices API is available.
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        var message = "MediaDevices API not available";
+        console.log(message);
+        alert(message);
+        return;
+    }
+
+    // Execute promise chain for miiting setup.
+    navigator.mediaDevices.enumerateDevices().
+        then(setMediaDeviceConstraints, errorHandler).
+        then(getUserMedia, errorHandler).
         then(setLocalMediaStream, errorHandler).
         then(createPeerConnection, errorHandler).
         then(tryCreateMiiting, errorHandler).
         then(determineMiitingRole, errorHandler).
-        then(continueBasedOnRole, errorHandler);
+        then(continueBasedOnRole, errorHandler).
+        then(sendLocalIceCandidates, errorHandler).
+        then(requestRemoteIceCandidates, errorHandler).
+        then(receiveRemoteIceCandidates, errorHandler).
+        then(setRemoteIceCandidates, errorHandler);
+}
+
+function setMediaDeviceConstraints(devices) {
+    console.log('Detected media devices: ' + JSON.stringify(devices, null, 4));
+
+    // Gather audio & video devices;
+    var cameras = devices.filter(device => device.kind == "videoinput");
+    var microphones = devices.filter(device => device.kind == "audioinput");
+
+    // Compose constraints based on available media devices.
+    var constraints = {
+        audio: microphones.length > 0,
+        video: cameras.length > 0 ? {
+            width: { exact: 640 },
+            height: { exact: 480 },
+        } : false,
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+        optional: {
+            DtlsSrtpKeyAgreement: true,
+        },
+    };
+
+    // Show the media constraints being used to initialize media devices.
+    console.log('Using constraints: ' + JSON.stringify(constraints, null, 4));
+
+    return constraints;
+}
+
+function getUserMedia(constraints) {
+    console.log('Initializing browser Media API...');
+    // Return promise to request for media device access.
+    return navigator.mediaDevices.getUserMedia(constraints);
 }
 
 function setLocalMediaStream(localStream) {
-    setStatus('Initialized browser Media API.');
+    console.log('Initialized browser Media API and local medida stream.');
+    // Set local video stream source to the initialized stream.
     LocalVideo.srcObject = localStream;
     return localStream;
 }
 
 function createPeerConnection(localStream) {
-    setStatus('Creating RTCPeerConnection...');
+    console.log('Creating RTCPeerConnection...');
     rtcPeerConnection = new RTCPeerConnection(peerConnectionConfig);
-    rtcPeerConnection.onicecandidate = onLocalIceCandidates;
-    rtcPeerConnection.ontrack = onRemoteStream;
+    rtcPeerConnection.onicecandidate = storeLocalIceCandidate;
+    rtcPeerConnection.ontrack = setRemoteMediaTrack;
     localStream.getTracks().forEach(
         track => rtcPeerConnection.addTrack(track, localStream));
 }
 
 function tryCreateMiiting() {
-    setStatus('Trying to create miiting...');
+    console.log('Trying to create miiting...');
 
     // Compose request JSON.
     var json = JSON.stringify({
         'initiator': name,
+        'token': token,
     });
 
     // Return Promise of the request creating our miiting.
@@ -146,46 +192,19 @@ function determineMiitingRole(xhr) {
     return false;
 }
 
-function onLocalIceCandidates(event) {
-    if (event.candidate == null) {
-        setStatus('Finished gathering local ICE candidates.');
-    } else {
-        setStatus('Gathering local ICE candidates...');
-        localIceCandidates.push(event.candidate);
-        console.log(event.candidate);
-    }
-}
-
-function onRemoteStream(event) {
-    setStatus('Received remote stream.');
-    var remoteStream = event.streams[0];
-    RemoteVideo.srcObject = remoteStream;
-    remoteStream.getTracks().forEach(
-        track => rtcPeerConnection.addTrack(track, remoteStream));
-}
-
-function setLocalDescription(description) {
-    setStatus('Setting local description...');
-    return rtcPeerConnection.setLocalDescription(description);
-}
-
-function setRemoteDescription(description) {
-    setStatus('Setting remote description...');
-    return rtcPeerConnection.setRemoteDescription(description);
-}
-
 function createOffer() {
-    setStatus('Creating offer...');
+    console.log('Creating offer...');
     return rtcPeerConnection.createOffer();
 }
 
-function createAnswer() {
-    setStatus('Creating answer...');
-    return rtcPeerConnection.createAnswer();
+function setLocalDescription(description) {
+    console.log('Setting local description: ' +
+        JSON.stringify(description, null, 4));
+    return rtcPeerConnection.setLocalDescription(description);
 }
 
 function sendLocalDescription() {
-    setStatus('Sending local SDP and ICE information...');
+    console.log('Sending local description...');
 
     // Compose local SDP and ICE candidates JSON.
     var json = JSON.stringify({
@@ -200,13 +219,13 @@ function sendLocalDescription() {
 }
 
 function requestRemoteDescription() {
-    setStatus('Receiving remote SDP and ICE information...');
+    console.log('Requesting remote description...');
     // Return promise of the request retrieving the remote description.
     return request('GET', apiUrl + '/' + remoteSDPType(), null, true);
 }
 
 function receiveRemoteDescription(xhr) {
-    setStatus('Receiving remote SDP and ICE information...');
+    console.log('Received remote description.');
 
     // Parse received remote description and compose JSEP description.
     var json = JSON.parse(xhr.responseText);
@@ -215,15 +234,81 @@ function receiveRemoteDescription(xhr) {
         'sdp': json.description,
     };
 
+    // Set the remote peer name.
+    RemoteName.innerHTML = json.name;
+
     // Create and return the remote session description object.
     return new RTCSessionDescription(jsep);
 }
 
-function adjournMiiting() {
-    // Destroy the miiting object if we are the miiting initiator.
-    if (isInitiator) {
-        request('DELETE', apiUrl, null, true);
+function setRemoteDescription(description) {
+    console.log('Setting remote description: ' +
+        JSON.stringify(description, null, 4));
+    return rtcPeerConnection.setRemoteDescription(description);
+}
+
+function createAnswer() {
+    console.log('Creating answer...');
+    return rtcPeerConnection.createAnswer();
+}
+
+// NOTE: for laziness' sake, we just send to the same API endpoint to receive
+// our ICE candidates, this will result in sending a redudant SDP, we should
+// change to use partial updates with PATCH in the future.
+function sendLocalIceCandidates() {
+    console.log('Sending local ICE candidates...');
+
+    // Compose local SDP and ICE candidates JSON.
+    var json = JSON.stringify({
+        'name': name,
+        'type': localSDPType(),
+        'description': rtcPeerConnection.localDescription.sdp,
+        'ice_candidates': localIceCandidates,
+    });
+
+    // Return promise of the request submitting our local description.
+    return request('PUT', apiUrl + '/' + localSDPType(), json, true);
+}
+
+function requestRemoteIceCandidates() {
+    console.log('Requesting remote ICE candidates...');
+    // Return promise of the request retrieving the remote description.
+    return request('GET', apiUrl + '/' + remoteSDPType() +
+        '?ice_only=true', null, true);
+}
+
+function receiveRemoteIceCandidates(xhr) {
+    console.log('Received remote ICE candidates.');
+    // Parse and return received remote ICE candidates.
+    return JSON.parse(xhr.responseText);
+}
+
+function setRemoteIceCandidates(iceCandidates) {
+    console.log('Setting remote ICE candidates: ' +
+        JSON.stringify(iceCandidates, null, 4));
+    // Add each received ICE canddiate to our RTCPeerConnection.
+    iceCandidates.forEach(iceCandidate =>
+        rtcPeerConnection.addIceCandidate(iceCandidate));
+}
+
+function storeLocalIceCandidate(event) {
+    if (event.candidate == null) {
+        console.log('Finished gathering local ICE candidates: ' +
+            JSON.stringify(localIceCandidates));
+    } else {
+        localIceCandidates.push(event.candidate);
+        console.log(event.candidate);
     }
+}
+
+function setRemoteMediaTrack(event) {
+    console.log('Received remote stream.');
+    RemoteVideo.srcObject = event.streams[0];
+}
+
+
+function adjournMiiting() {
+    request('DELETE', apiUrl + '?token=' + token, null, true);
 }
 
 function request(method, url, body, async) {
@@ -238,7 +323,7 @@ function request(method, url, body, async) {
             if (xhr.status >= 200 && xhr.status < 400)
                 resolve(xhr);
             else {
-                setStatus(xhr.responseText)
+                console.log(xhr.responseText)
                 reject(xhr);
             }
         }
@@ -257,6 +342,14 @@ function request(method, url, body, async) {
     });
 }
 
+function generateToken() {
+    var token = "";
+    var runes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    for (var i = 0; i < 16; i++) {
+        token += runes.charAt(Math.floor(Math.random() * runes.length));
+    }
+    return token;
+}
 
 function localSDPType() {
     return isInitiator ? 'offer' : 'answer';
@@ -266,11 +359,7 @@ function remoteSDPType() {
     return isInitiator ? 'answer' : 'offer';
 }
 
-function setStatus(message) {
-    document.getElementById('Status').value = message;
-    console.log(message);
-}
-
 function errorHandler(error) {
     console.log(error);
+    alert(JSON.stringify(error, null, 4));
 }
