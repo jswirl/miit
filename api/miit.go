@@ -190,8 +190,8 @@ func CreateMiiting(ctx *gin.Context) {
 		token:      body["token"],
 		offer:      nil,
 		answer:     nil,
-		offerChan:  nil,
-		answerChan: nil,
+		offerChan:  make(chan *sessionDescription, 1),
+		answerChan: make(chan *sessionDescription, 1),
 	}
 
 	// Check and create the miiting if it doesn't exist.
@@ -282,17 +282,9 @@ func GetSDPAndICECandidates(ctx *gin.Context) {
 	var sdp *sessionDescription
 	var sdpChan chan *sessionDescription
 	if sdpType == "offer" {
-		if sdp = miiting.offer; miiting.offerChan == nil &&
-			(sdp == nil || len(sdp.IceCandidates) == 0) {
-			miiting.offerChan = make(chan *sessionDescription, 1)
-			sdpChan = miiting.offerChan
-		}
+		sdpChan = miiting.offerChan
 	} else if sdpType == "answer" {
-		if sdp = miiting.answer; miiting.answerChan == nil &&
-			(sdp == nil || len(sdp.IceCandidates) == 0) {
-			miiting.answerChan = make(chan *sessionDescription, 1)
-			sdpChan = miiting.answerChan
-		}
+		sdpChan = miiting.answerChan
 	} else {
 		logger.Error("Invalid SDP type: [%s]", sdpType)
 		ctx.AbortWithStatus(http.StatusBadRequest)
