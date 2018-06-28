@@ -162,7 +162,6 @@ function createPeerConnection(localStream) {
     rtcPeerConnection.ontrack = setRemoteMediaTrack;
     localStream.getTracks().forEach(track =>
         rtcPeerConnection.addTrack(track, localStream));
-    rtcPeerConnection.addStream(localStream);
 }
 
 function tryCreateMiiting() {
