@@ -72,7 +72,7 @@ function initialize() {
 
 function run() {
     // Branched continuation of the the chain based on our role.
-    var continueBasedOnRole = function(isInitiator) {
+    var continueBasedOnRole = function() {
         if (isInitiator) {
             // We are the initiator of the miiting.
             return createOffer().catch(errorHandler).
@@ -160,8 +160,9 @@ function createPeerConnection(localStream) {
     rtcPeerConnection = new RTCPeerConnection(peerConnectionConfig);
     rtcPeerConnection.onicecandidate = storeLocalIceCandidate;
     rtcPeerConnection.ontrack = setRemoteMediaTrack;
-    localStream.getTracks().forEach(
-        track => rtcPeerConnection.addTrack(track, localStream));
+    localStream.getTracks().forEach(track =>
+        rtcPeerConnection.addTrack(track, localStream));
+    rtcPeerConnection.addStream(localStream);
 }
 
 function tryCreateMiiting() {
