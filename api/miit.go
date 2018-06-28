@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -62,13 +64,61 @@ func init() {
 	// Create router group for miiting module and register handlers.
 	miitingsGroup := root.Group("miitings")
 	miitingsGroup.Use(middleware.Body(1024))
+	miitingsGroup.GET("", RedirectRandomMiiting)
 	miitingsGroup.GET(":miiting", GetMiiting)
 	miitingsGroup.POST(":miiting", CreateMiiting)
 	miitingsGroup.DELETE(":miiting", AdjournMiiting)
 	miitingsGroup.GET(":miiting/:type", GetSDPAndICECandidates)
 	miitingsGroup.POST(":miiting/:type", SetSDPAndICECandidates)
+	// TODO: use PATCH and do partial updates instead.
 	miitingsGroup.PUT(":miiting/:type", SetSDPAndICECandidates)
-	// TODO: use PATH and do partial updates instead.
+}
+
+// RedirectRandomMiiting is a handler that redirects the client to a random miiting.
+func RedirectRandomMiiting(ctx *gin.Context) {
+	// Get logger instance.
+	logger := middleware.GetLogger(ctx)
+
+	// Iterate through the current miitings and randomly choose one to redirect to.
+	var chosen string
+	count := 2
+	miitings.Range(func(key interface{}, value interface{}) bool {
+		// Obtain the original key/value.
+		miitingID := key.(string)
+		miiting := value.(*miiting)
+
+		// Make sure the meeting is not established and ongoing.
+		if miiting.answer != nil {
+			return true
+		}
+
+		// Roll the dice, see if we should pick this one.
+		if rand.Int()%count == 0 {
+			chosen = miitingID
+			return false
+		}
+
+		// None is chosen, continue onto the next miiting.
+		count++
+		return true
+	})
+
+	// Set no-cache response headers first.
+	ctx.Request.Header.Add("Cache-Control", "no-cache")
+	ctx.Request.Header.Add("Cache-Control", "no-store")
+	ctx.Request.Header.Add("Cache-Control", "must-revalidate")
+
+	// Redirect to the target URL if a miiting was chosen.
+	if len(chosen) > 0 {
+		url := fmt.Sprintf("%s/%s", ctx.Request.URL.EscapedPath(), chosen)
+		logger.Debug("Redirecting to randomly chosen miiting: [%s]", url)
+		ctx.Redirect(http.StatusTemporaryRedirect, url)
+		return
+	}
+
+	// No miiting was available, respond accordingly.
+	logger.Error("Failed to find available miitings")
+	ctx.AbortWithStatus(http.StatusNotFound)
 }
 
 // GetMiiting returns the main index page for requests.
@@ -171,7 +221,7 @@ func AdjournMiiting(ctx *gin.Context) {
 	// Lookup the requested miiting.
 	value, exists := miitings.Load(miitingID)
 	if !exists {
-		logger.Error("Failed to find miiting [%s]", miitingID)
+		logger.Warn("Failed to find miiting [%s]", miitingID)
 		ctx.AbortWithStatus(http.StatusNotFound)
 		return
 	}
@@ -232,12 +282,14 @@ func GetSDPAndICECandidates(ctx *gin.Context) {
 	var sdp *sessionDescription
 	var sdpChan chan *sessionDescription
 	if sdpType == "offer" {
-		if sdp = miiting.offer; sdp == nil || len(sdp.IceCandidates) == 0 {
+		if sdp = miiting.offer; miiting.offerChan == nil &&
+			(sdp == nil || len(sdp.IceCandidates) == 0) {
 			miiting.offerChan = make(chan *sessionDescription, 1)
 			sdpChan = miiting.offerChan
 		}
 	} else if sdpType == "answer" {
-		if sdp = miiting.answer; sdp == nil || len(sdp.IceCandidates) == 0 {
+		if sdp = miiting.answer; miiting.answerChan == nil &&
+			(sdp == nil || len(sdp.IceCandidates) == 0) {
 			miiting.answerChan = make(chan *sessionDescription, 1)
 			sdpChan = miiting.answerChan
 		}

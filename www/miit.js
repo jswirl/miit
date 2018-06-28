@@ -25,7 +25,6 @@ var peerConnectionConfig = {
     ],
     bundlePolicy: 'max-compat',
     iceTransportPolicy: 'all',
-
 }
 
 function main() {
@@ -65,6 +64,8 @@ function initialize() {
         window.RTCSessionDescription ||
         window.mozRTCSessionDescription ||
         window.webkitRTCSessionDescription;
+
+    // Handle miiting teardown when user leaves page.
     window.onunload = adjournMiiting;
     window.onbeforeunload = adjournMiiting;
     window.onpagehide = adjournMiiting;
@@ -112,7 +113,8 @@ function run() {
         then(sendLocalIceCandidates, errorHandler).
         then(requestRemoteIceCandidates, errorHandler).
         then(receiveRemoteIceCandidates, errorHandler).
-        then(setRemoteIceCandidates, errorHandler);
+        then(setRemoteIceCandidates, errorHandler).
+        catch(showError, showError);
 }
 
 function setMediaDeviceConstraints(devices) {
@@ -220,6 +222,10 @@ function sendLocalDescription() {
 
 function requestRemoteDescription() {
     console.log('Requesting remote description...');
+
+    // Show that we are now waiting for the other end to join.
+    RemoteName.innerHTML = 'Waiting...';
+
     // Return promise of the request retrieving the remote description.
     return request('GET', apiUrl + '/' + remoteSDPType(), null, true);
 }
@@ -329,8 +335,9 @@ function request(method, url, body, async) {
         }
 
         // Setup request exception handler.
-        exceptionHandler = function() {
+        exceptionHandler = function(error) {
             reject('request failed due to timeout / network error');
+            return errorHandler(error)
         }
 
         // Setup error & request timeout handlers.
@@ -361,5 +368,9 @@ function remoteSDPType() {
 
 function errorHandler(error) {
     console.log(error);
-    alert(JSON.stringify(error, null, 4));
+    return Promise.reject(error);
+}
+
+function showError(error) {
+    alert('Error: ' + JSON.stringify(error, null, 4));
 }
