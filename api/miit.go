@@ -116,8 +116,8 @@ func RedirectRandomMiiting(ctx *gin.Context) {
 	}
 
 	// No miiting was available, respond accordingly.
-	logger.Error("Failed to find available miitings")
-	ctx.AbortWithStatus(http.StatusNotFound)
+	abortWithStatusAndMessage(ctx, http.StatusNotFound,
+		"Failed to find available miitings")
 }
 
 // GetMiiting returns the main index page for requests.
@@ -128,22 +128,20 @@ func GetMiiting(ctx *gin.Context) {
 
 // PushMiitAssets is the handler for pushing the miit assets to clients.
 func PushMiitAssets(ctx *gin.Context) {
-	// Get logger instance.
-	logger := middleware.GetLogger(ctx)
-
 	// Get the miiting ID from path params.
 	miitingID := ctx.Param("miiting")
 	if len(miitingID) <= 0 {
-		logger.Error("Invalid miiting ID: [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid miiting ID: [%s]", miitingID)
+		return
 		return
 	}
 
 	// Get the server push instance from context.
 	pusher := ctx.Writer.Pusher()
 	if pusher == nil {
-		logger.Error("Failed to get HTTP/2 server push instance")
-		ctx.AbortWithStatus(http.StatusInternalServerError)
+		abortWithStatusAndMessage(ctx, http.StatusInternalServerError,
+			"Failed to get HTTP/2 server push instance")
 		return
 	}
 
@@ -151,8 +149,8 @@ func PushMiitAssets(ctx *gin.Context) {
 	assets := []string{indexPagePath, scriptPath}
 	for _, asset := range assets {
 		if err := pusher.Push(asset, nil); err != nil {
-			logger.Error("Failed to push asset [%s]: %v", asset, err)
-			ctx.AbortWithStatus(http.StatusInternalServerError)
+			abortWithStatusAndMessage(ctx, http.StatusInternalServerError,
+				"Failed to push asset [%s]: %v", asset, err)
 			return
 		}
 	}
@@ -163,22 +161,19 @@ func PushMiitAssets(ctx *gin.Context) {
 
 // CreateAndJoinMiiting is the handler for requests creating a miiting.
 func CreateAndJoinMiiting(ctx *gin.Context) {
-	// Get logger instance.
-	logger := middleware.GetLogger(ctx)
-
 	// Get the miiting ID from path params.
 	miitingID := ctx.Param("miiting")
 	if len(miitingID) <= 0 {
-		logger.Error("Invalid miiting ID: [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid miiting ID: [%s]", miitingID)
 		return
 	}
 
 	// Get miiting initiator name from request body.
 	body := map[string]string{}
 	if err := ctx.BindJSON(&body); err != nil {
-		logger.Error("Failed to unmarshal miiting creation request: %v", err)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Failed to unmarshal miiting creation request: %v", err)
 		return
 	}
 
@@ -204,19 +199,17 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	}
 
 	// Two clients have already joined, reject the request.
-	ctx.AbortWithStatus(http.StatusTooManyRequests)
+	abortWithStatusAndMessage(ctx, http.StatusTooManyRequests,
+		"Cannot join ongoing miiting [%s]", miitingID)
 }
 
 // DeleteMiiting is the handler for requests deleting a miiting.
 func DeleteMiiting(ctx *gin.Context) {
-	// Get logger instance.
-	logger := middleware.GetLogger(ctx)
-
 	// Get the miiting ID from path params.
 	miitingID := ctx.Param("miiting")
 	if len(miitingID) <= 0 {
-		logger.Error("Invalid miiting ID: [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid miiting ID: [%s]", miitingID)
 		return
 	}
 
@@ -226,18 +219,20 @@ func DeleteMiiting(ctx *gin.Context) {
 	// Lookup the requested miiting.
 	value, exists := miitings.Load(miitingID)
 	if !exists {
-		logger.Warn("Failed to find miiting [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusNotFound)
+		abortWithStatusAndMessage(ctx, http.StatusNotFound,
+			"Failed to find miiting [%s]", miitingID)
 		return
 	}
 	miiting := value.(*miiting)
 
-	// Check if token is in miiting tokens list.
-
 	// Delete the miiting from miitings map.if token is valid.
 	if !tokenIsValid(miiting, token) {
-		ctx.AbortWithStatus(http.StatusUnauthorized)
+		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
+			"Unauthorized token: [%s]", token)
 	} else {
+		// Close open channels so waiting
+		close(miiting.offerChan)
+		close(miiting.answerChan)
 		miitings.Delete(miitingID)
 		ctx.JSON(http.StatusOK, gin.H{})
 	}
@@ -251,8 +246,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	// Get the requested miiting ID from path params.
 	miitingID := ctx.Param("miiting")
 	if len(miitingID) <= 0 {
-		logger.Error("Invalid miiting ID: [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid miiting ID: [%s]", miitingID)
 		return
 	}
 
@@ -279,8 +274,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	// Lookup the requested miiting.
 	value, exists := miitings.Load(miitingID)
 	if !exists {
-		logger.Error("Failed to find miiting [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusNotFound)
+		abortWithStatusAndMessage(ctx, http.StatusNotFound,
+			"Failed to find miiting [%s]", miitingID)
 		return
 	}
 	miiting := value.(*miiting)
@@ -288,7 +283,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	// Check if the provided token is valid.
 	token := ctx.Query("token")
 	if !tokenIsValid(miiting, token) {
-		ctx.AbortWithStatus(http.StatusUnauthorized)
+		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
+			"Unauthorized token: [%s]", token)
 		return
 	}
 
@@ -300,8 +296,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	} else if sdpType == "answer" {
 		sdpChan = miiting.answerChan
 	} else {
-		logger.Error("Invalid SDP type: [%s]", sdpType)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid SDP type: [%s]", sdpType)
 		return
 	}
 
@@ -313,8 +309,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 
 	// Respond with error code if waiting for the description has timed out.
 	if sdp == nil {
-		logger.Error("Timed-out waiting for description from peer")
-		ctx.AbortWithStatus(http.StatusGatewayTimeout)
+		abortWithStatusAndMessage(ctx, http.StatusGatewayTimeout,
+			"Timed-out waiting for description from peer")
 		return
 	}
 
@@ -328,38 +324,35 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 
 // SendSDPAndICECandidates is the handler for sending SDP and ICE candidates.
 func SendSDPAndICECandidates(ctx *gin.Context) {
-	// Get logger instance.
-	logger := middleware.GetLogger(ctx)
-
 	// Get the requested miiting ID from path params.
 	miitingID := ctx.Param("miiting")
 	if len(miitingID) <= 0 {
-		logger.Error("Invalid miiting ID: [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid miiting ID: [%s]", miitingID)
 		return
 	}
 
 	// Get the requested SDP type from path params.
 	sdpType := ctx.Param("type")
 	if len(sdpType) <= 0 {
-		logger.Error("Invalid SDP type: %s", sdpType)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid SDP type: [%s]", sdpType)
 		return
 	}
 
 	// Extract the SDP from request body.
 	sdp := sessionDescription{}
 	if err := ctx.BindJSON(&sdp); err != nil {
-		logger.Error("Failed to extract SDP from request body: %v", err)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Failed to extract SDP from request body: %v", err)
 		return
 	}
 
 	// Lookup the requested miiting.
 	value, exists := miitings.Load(miitingID)
 	if !exists {
-		logger.Error("Failed to find miiting [%s]", miitingID)
-		ctx.AbortWithStatus(http.StatusNotFound)
+		abortWithStatusAndMessage(ctx, http.StatusNotFound,
+			"Failed to find miiting [%s]", miitingID)
 		return
 	}
 	miiting := value.(*miiting)
@@ -367,7 +360,8 @@ func SendSDPAndICECandidates(ctx *gin.Context) {
 	// Check if the provided token is valid.
 	token := ctx.Query("token")
 	if !tokenIsValid(miiting, token) {
-		ctx.AbortWithStatus(http.StatusUnauthorized)
+		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
+			"Unauthorized token: [%s]", token)
 		return
 	}
 
@@ -379,8 +373,8 @@ func SendSDPAndICECandidates(ctx *gin.Context) {
 		// Send the submitted answer over the answer channel.
 		miiting.answerChan <- &sdp
 	} else {
-		logger.Error("Invalid SDP type: %s", sdpType)
-		ctx.AbortWithStatus(http.StatusBadRequest)
+		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
+			"Invalid SDP type: [%s]", sdpType)
 		return
 	}
 
@@ -400,4 +394,13 @@ func tokenIsValid(miiting *miiting, token string) bool {
 	}
 
 	return exists
+}
+
+// Abort request processing and respond with error message.
+func abortWithStatusAndMessage(ctx *gin.Context, status int,
+	format string, arguments ...interface{}) {
+	logger := middleware.GetLogger(ctx)
+	message := fmt.Sprintf(format, arguments...)
+	ctx.AbortWithStatusJSON(status, gin.H{"error": message})
+	logger.Error(message)
 }

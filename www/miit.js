@@ -149,7 +149,6 @@ function tryCreateMiiting() {
 
     // Compose request JSON.
     var json = JSON.stringify({
-        'initiator': name,
         'token': token,
     });
 
@@ -196,8 +195,10 @@ function setMediaDeviceConstraints(devices) {
     constraints = {
         audio: microphones.length > 0,
         video: cameras.length > 0 ? {
-            width: { exact: 640 },
-            height: { exact: 480 },
+            // These are set so our MacBooks don't overheat.
+            width: { exact: 160},
+            height: { exact: 120 },
+            frameRate: { exact: 15 }
         } : false,
         optional: {
             DtlsSrtpKeyAgreement: true,
@@ -435,6 +436,11 @@ function errorHandler(error) {
     return Promise.reject(error);
 }
 
-function showError(error) {
-    alert('Error: ' + JSON.stringify(error, null, 4));
+function showError(object) {
+    // Display error based on object type.
+    if (object instanceof XMLHttpRequest) {
+        alert(JSON.parse(object.responseText).error);
+    } else {
+        alert(object);
+    }
 }

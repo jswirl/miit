@@ -72,8 +72,13 @@ func Logger() gin.HandlerFunc {
 		}
 
 		// Log the outgoing response information.
-		logger.Info("Code: [%3d], Latency: [%10v], Body: [%s]",
-			code, elapsed, body)
+		if code >= 400 {
+			logger.Error("Code: [%3d], Latency: [%10v], Body: [%s]",
+				code, elapsed, body)
+		} else {
+			logger.Info("Code: [%3d], Latency: [%10v], Body: [%s]",
+				code, elapsed, body)
+		}
 
 	}
 }
