@@ -20,6 +20,8 @@ var localIceCandidates = [];
 /* ICE Server Configurations */
 var peerConnectionConfig = {
     iceServers: [
+        { url: 'stun:stunserver.org' },
+        { url: 'stun:stun.xten.com' },
         { url: 'stun:stun.l.google.com:19302' },
         { url: 'stun:stun.services.mozilla.com' },
     ],
@@ -245,7 +247,8 @@ function sendLocalDescription() {
         'ice_candidates': localIceCandidates,
     });
 
-    return request('POST', apiUrl + '/' + localSDPType(), json, true);
+    return request('POST', apiUrl + '/' + localSDPType() + '?token=' + token,
+        json, true);
 }
 
 function requestRemoteDescription() {
@@ -254,7 +257,8 @@ function requestRemoteDescription() {
     // Show that we are now waiting for the other end to join.
     RemoteName.innerHTML = 'Waiting...';
 
-    return request('GET', apiUrl + '/' + remoteSDPType(), null, true);
+    return request('GET', apiUrl + '/' + remoteSDPType() + '?token=' + token,
+        null, true);
 }
 
 function receiveRemoteDescription(xhr) {
@@ -298,13 +302,14 @@ function sendLocalIceCandidates() {
         'ice_candidates': localIceCandidates,
     });
 
-    return request('PUT', apiUrl + '/' + localSDPType(), json, true);
+    return request('PUT', apiUrl + '/' + localSDPType() + '?token=' + token,
+        json, true);
 }
 
 function requestRemoteIceCandidates() {
     console.log('Requesting remote ICE candidates...');
     return request('GET', apiUrl + '/' + remoteSDPType() +
-        '?ice_only=true', null, true);
+        '?ice_only=true&token=' + token, null, true);
 }
 
 function receiveRemoteIceCandidates(xhr) {

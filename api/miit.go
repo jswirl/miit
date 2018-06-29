@@ -15,11 +15,8 @@ import (
 
 // miiting is the object representing a miiting.
 type miiting struct {
-	Initiator  string                   `json:"initiator"`
-	Timestamp  time.Time                `json:"timestamp"`
-	token      string                   `json:"-"`
-	offer      *sessionDescription      `json:"-"`
-	answer     *sessionDescription      `json:"_"`
+	timestamp  time.Time                `json:"timestamp"`
+	tokens     []string                 `json:"-"`
 	offerChan  chan *sessionDescription `json:"-"`
 	answerChan chan *sessionDescription `json:"-"`
 }
@@ -39,19 +36,21 @@ type iceCandidate struct {
 	SdpMLineIndex uint   `json:"sdpMLineIndex"`
 }
 
-// miitings contains all current
+// miitings contains all current miitings.
 var miitings sync.Map
 
-// miit main HTML index page and main JavaScript file path.
+// miit configurations.
 var miitAssetsPath string
 var indexPagePath string
 var scriptPath string
+var sdpWaitTimeout time.Duration
 
 func init() {
 	// Load asset configuration paths.
 	miitAssetsPath = config.GetString("MIIT_ASSETS_PATH")
 	indexPagePath = config.GetString("MIIT_INDEX_PAGE_PATH")
 	scriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
+	sdpWaitTimeout = config.GetMilliseconds("MIIT_SDP_WAIT_TIMEOUT")
 
 	// Obtain the root router group.
 	root := GetRoot()
@@ -66,12 +65,12 @@ func init() {
 	miitingsGroup.Use(middleware.Body(1024))
 	miitingsGroup.GET("", RedirectRandomMiiting)
 	miitingsGroup.GET(":miiting", GetMiiting)
-	miitingsGroup.POST(":miiting", CreateMiiting)
-	miitingsGroup.DELETE(":miiting", AdjournMiiting)
-	miitingsGroup.GET(":miiting/:type", GetSDPAndICECandidates)
-	miitingsGroup.POST(":miiting/:type", SetSDPAndICECandidates)
+	miitingsGroup.POST(":miiting", CreateAndJoinMiiting)
+	miitingsGroup.DELETE(":miiting", DeleteMiiting)
+	miitingsGroup.GET(":miiting/:type", ReceiveSDPAndICECandidates)
+	miitingsGroup.POST(":miiting/:type", SendSDPAndICECandidates)
 	// TODO: use PATCH and do partial updates instead.
-	miitingsGroup.PUT(":miiting/:type", SetSDPAndICECandidates)
+	miitingsGroup.PUT(":miiting/:type", SendSDPAndICECandidates)
 }
 
 // RedirectRandomMiiting is a handler that redirects the client to a random miiting.
@@ -88,7 +87,7 @@ func RedirectRandomMiiting(ctx *gin.Context) {
 		miiting := value.(*miiting)
 
 		// Make sure the meeting is not established and ongoing.
-		if miiting.answer != nil {
+		if len(miiting.tokens) >= 2 {
 			return true
 		}
 
@@ -162,8 +161,8 @@ func PushMiitAssets(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{})
 }
 
-// CreateMiiting is the handler for requests creating a miiting.
-func CreateMiiting(ctx *gin.Context) {
+// CreateAndJoinMiiting is the handler for requests creating a miiting.
+func CreateAndJoinMiiting(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
 
@@ -183,27 +182,33 @@ func CreateMiiting(ctx *gin.Context) {
 		return
 	}
 
-	// Create and prepare the new miiting.
-	value := miiting{
-		Initiator:  body["initiator"],
-		Timestamp:  time.Now(),
-		token:      body["token"],
-		offer:      nil,
-		answer:     nil,
-		offerChan:  make(chan *sessionDescription, 1),
-		answerChan: make(chan *sessionDescription, 1),
+	// Check and create the miiting if it doesn't exist.
+	value := miiting{}
+	miitingIntf, exists := miitings.LoadOrStore(miitingID, &value)
+	storedMiiting := miitingIntf.(*miiting)
+	if !exists {
+		storedMiiting.timestamp = time.Now()
+		storedMiiting.tokens = append(storedMiiting.tokens, body["token"])
+		storedMiiting.offerChan = make(chan *sessionDescription, 1)
+		storedMiiting.answerChan = make(chan *sessionDescription, 1)
+		ctx.JSON(http.StatusCreated, storedMiiting)
+		return
 	}
 
-	// Check and create the miiting if it doesn't exist.
-	if _, exists := miitings.LoadOrStore(miitingID, &value); exists {
-		ctx.JSON(http.StatusOK, &value)
-	} else {
-		ctx.JSON(http.StatusCreated, &value)
+	// At most two users are allowed to join a miiting.
+	if len(storedMiiting.tokens) < 2 {
+		// Add to the list of participating user tokens. if
+		storedMiiting.tokens = append(storedMiiting.tokens, body["token"])
+		ctx.JSON(http.StatusOK, storedMiiting)
+		return
 	}
+
+	// Two clients have already joined, reject the request.
+	ctx.AbortWithStatus(http.StatusTooManyRequests)
 }
 
-// AdjournMiiting is the handler for requests deleting a miiting.
-func AdjournMiiting(ctx *gin.Context) {
+// DeleteMiiting is the handler for requests deleting a miiting.
+func DeleteMiiting(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
 
@@ -215,7 +220,7 @@ func AdjournMiiting(ctx *gin.Context) {
 		return
 	}
 
-	// Get the token associated with the creating of this miiting.
+	// Get the token associated with joining this miiting..
 	token := ctx.Query("token")
 
 	// Lookup the requested miiting.
@@ -227,8 +232,10 @@ func AdjournMiiting(ctx *gin.Context) {
 	}
 	miiting := value.(*miiting)
 
-	// Delete the miiting from miitings map.if token matches.
-	if miiting.token != token {
+	// Check if token is in miiting tokens list.
+
+	// Delete the miiting from miitings map.if token is valid.
+	if !tokenIsValid(miiting, token) {
 		ctx.AbortWithStatus(http.StatusUnauthorized)
 	} else {
 		miitings.Delete(miitingID)
@@ -236,8 +243,8 @@ func AdjournMiiting(ctx *gin.Context) {
 	}
 }
 
-// GetSDPAndICECandidates is the handler for getting SDP and ICE candidates.
-func GetSDPAndICECandidates(ctx *gin.Context) {
+// ReceiveSDPAndICECandidates is the handler for receiving SDP and ICE candidates.
+func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
 
@@ -278,6 +285,13 @@ func GetSDPAndICECandidates(ctx *gin.Context) {
 	}
 	miiting := value.(*miiting)
 
+	// Check if the provided token is valid.
+	token := ctx.Query("token")
+	if !tokenIsValid(miiting, token) {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
 	// Get the requested SDP from our miiting.
 	var sdp *sessionDescription
 	var sdpChan chan *sessionDescription
@@ -291,9 +305,17 @@ func GetSDPAndICECandidates(ctx *gin.Context) {
 		return
 	}
 
-	// Wait for the description if it has not been submitted yet.
-	if sdp == nil || (iceCandidatesOnly && len(sdp.IceCandidates) == 0) {
-		sdp = <-sdpChan
+	// Read & wait for the SDP to be submitted by the other client.
+	select {
+	case sdp = <-sdpChan:
+	case <-time.After(sdpWaitTimeout):
+	}
+
+	// Respond with error code if waiting for the description has timed out.
+	if sdp == nil {
+		logger.Error("Timed-out waiting for description from peer")
+		ctx.AbortWithStatus(http.StatusGatewayTimeout)
+		return
 	}
 
 	// Return the requested SDP and/or ICE candidates.
@@ -304,8 +326,8 @@ func GetSDPAndICECandidates(ctx *gin.Context) {
 	}
 }
 
-// SetSDPAndICECandidates is the handler for setting SDP and ICE candidates.
-func SetSDPAndICECandidates(ctx *gin.Context) {
+// SendSDPAndICECandidates is the handler for sending SDP and ICE candidates.
+func SendSDPAndICECandidates(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
 
@@ -342,33 +364,20 @@ func SetSDPAndICECandidates(ctx *gin.Context) {
 	}
 	miiting := value.(*miiting)
 
+	// Check if the provided token is valid.
+	token := ctx.Query("token")
+	if !tokenIsValid(miiting, token) {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
 	// Get the requested SDP from our miiting.
-	if sdpType == "offer" {
-		// Make sure the offer is not created twice.
-		if miiting.offer != nil && ctx.Request.Method == http.MethodPost {
-			logger.Error("Multiple POSTs to [%s/offer]", miitingID)
-			ctx.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-
-		// Write the submitted offer to the offer channel if one is waiting.
-		miiting.offer = &sdp
-		if miiting.offerChan != nil {
-			miiting.offerChan <- &sdp
-		}
-	} else if sdpType == "answer" {
-		// Make sure the offer is not created twice.
-		if miiting.answer != nil && ctx.Request.Method == http.MethodPost {
-			logger.Error("Multiple POSTs to [%s/answer]", miitingID)
-			ctx.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-
-		// Write the submitted answer to the answer channel if one is waiting.
-		miiting.answer = &sdp
-		if miiting.answerChan != nil {
-			miiting.answerChan <- &sdp
-		}
+	if sdpType == "offer" && miiting.offerChan != nil {
+		// Send the submitted offer over the offer channel.
+		miiting.offerChan <- &sdp
+	} else if sdpType == "answer" && miiting.answerChan != nil {
+		// Send the submitted answer over the answer channel.
+		miiting.answerChan <- &sdp
 	} else {
 		logger.Error("Invalid SDP type: %s", sdpType)
 		ctx.AbortWithStatus(http.StatusBadRequest)
@@ -377,4 +386,18 @@ func SetSDPAndICECandidates(ctx *gin.Context) {
 
 	// Respond with empty JSON.
 	ctx.JSON(http.StatusOK, gin.H{})
+}
+
+// Check if the provided token is in our miiting tokens list.
+func tokenIsValid(miiting *miiting, token string) bool {
+	// Iterate through all tokens in our miiting.
+	exists := false
+	for idx := range miiting.tokens {
+		if miiting.tokens[idx] == token {
+			exists = true
+			break
+		}
+	}
+
+	return exists
 }
