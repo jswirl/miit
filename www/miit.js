@@ -37,9 +37,11 @@ var preferredAudioCodec = 'opus';
 var preferredVideoCodec = 'H264';
 
 /* Video settings */
-var videoWidth = 640;
-var videoHeight = 480;
-var videoFrameRate = 30;
+var videoSettings = {
+    width: { min: 160, ideal: 320, max: 640 },
+    height: { min: 120, ideal: 240, max: 480 },
+    frameRate: { min: 5, ideal: 30, max: 30 }
+}
 
 function main() {
     // Initialize browser Media API & DOM elements.
@@ -196,7 +198,8 @@ function enumerateMediaDevices() {
 }
 
 function setMediaDeviceConstraints(devices) {
-    console.log('Detected media devices: ' + JSON.stringify(devices, null, 4));
+    console.log('Detected media devices: ');
+    console.log(devices);
 
     // Gather audio & video devices;
     var cameras = devices.filter(device => device.kind == "videoinput");
@@ -205,12 +208,7 @@ function setMediaDeviceConstraints(devices) {
     // Compose constraints based on available media devices.
     constraints = {
         audio: microphones.length > 0,
-        video: cameras.length > 0 ? {
-            // These are set so our MacBooks don't overheat.
-            width: { exact: videoWidth },
-            height: { exact: videoHeight },
-            frameRate: { exact: videoFrameRate }
-        } : false,
+        video: cameras.length > 0 ? videoSettings : false,
         optional: {
             DtlsSrtpKeyAgreement: true,
             offerToReceiveAudio: true,
@@ -219,7 +217,8 @@ function setMediaDeviceConstraints(devices) {
         },
     };
 
-    console.log('Using constraints: ' + JSON.stringify(constraints, null, 4));
+    console.log('Using constraints: ');
+    console.log(constraints);
 
     return constraints;
 }
@@ -296,8 +295,8 @@ function adjustMediaCodecPriority(description) {
 }
 
 function setLocalDescription(description) {
-    console.log('Setting local description: ' +
-        JSON.stringify(description, null, 4));
+    console.log('Setting local description: ');
+    console.log(description);
     return rtcPeerConnection.setLocalDescription(description);
 }
 
@@ -343,8 +342,8 @@ function receiveRemoteDescription(xhr) {
 }
 
 function setRemoteDescription(description) {
-    console.log('Setting remote description: ' +
-        JSON.stringify(description, null, 4));
+    console.log('Setting remote description: ');
+    console.log(description);
     return rtcPeerConnection.setRemoteDescription(description);
 }
 
@@ -383,16 +382,17 @@ function receiveRemoteIceCandidates(xhr) {
 }
 
 function setRemoteIceCandidates(iceCandidates) {
-    console.log('Setting remote ICE candidates: ' +
-        JSON.stringify(iceCandidates, null, 4));
+    console.log('Setting remote ICE candidates: ');
+    console.log(iceCandidates);
     iceCandidates.forEach(iceCandidate =>
-        rtcPeerConnection.addIceCandidate(iceCandidate));
+        rtcPeerConnection.addIceCandidate(iceCandidate).
+        catch(errorHandler));
 }
 
 function storeLocalIceCandidate(event) {
     if (event.candidate == null) {
-        console.log('Finished gathering local ICE candidates: ' +
-            JSON.stringify(localIceCandidates, null, 4));
+        console.log('Finished gathering local ICE candidates: ');
+        console.log(event);
     } else {
         localIceCandidates.push(event.candidate);
         console.log(event.candidate);
@@ -400,20 +400,20 @@ function storeLocalIceCandidate(event) {
 }
 
 function setRemoteMediaTrack(event) {
-    console.log('Received remote streams: ' +
-        JSON.stringify(event, null, 4));
+    console.log('Received remote streams: ');
+    console.log(event);
     RemoteVideo.srcObject = event.streams[0];
 }
 
 function handleMediaTrackRemoved(event) {
-    console.log('Media track removal event: ' +
-        JSON.stringify(event, null, 4));
+    console.log('Media track removal event: ');
+    console.log(event);
     teardown();
 }
 
 function handleIceConnectionState(event) {
-    console.log('ICE connection state changed: ' +
-        JSON.stringify(event, null, 4));
+    console.log('ICE connection state changed: ');
+    console.log(event);
 
     // Teardown the meeting if ICE has disconnected.
     if (rtcPeerConnection) {
@@ -428,11 +428,12 @@ function handleIceConnectionState(event) {
 }
 
 function printStateChangeEvent(event) {
-    console.log('ICE gathering / signaling state change event: ' +
-        JSON.stringify(event, null, 4));
+    console.log('ICE gathering / signaling state change event: ');
+    console.log(event);
 }
 
 function teardown() {
+    console.log('Tearing down connection and finalizing resources...');
     deleteMiiting();
     if (rtcPeerConnection) {
         finalize();
@@ -443,7 +444,9 @@ function teardown() {
 }
 
 function deleteMiiting() {
-    request('DELETE', apiUrl + '?token=' + token, null, true);
+    // Delete the miiting on best effor basis.
+    request('DELETE', apiUrl + '?token=' + token, null, true).
+        then(errorHandler, errorHandler);
 }
 
 function request(method, url, body, async) {
