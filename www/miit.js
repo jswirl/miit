@@ -32,6 +32,15 @@ var peerConnectionConfig = {
 /* Media constraints. */
 var constraints;
 
+/* Codec preferences */
+var preferredAudioCodec = 'opus';
+var preferredVideoCodec = 'H264';
+
+/* Video settings */
+var videoWidth = 640;
+var videoHeight = 480;
+var videoFrameRate = 30;
+
 function main() {
     // Initialize browser Media API & DOM elements.
     initialize();
@@ -113,6 +122,7 @@ function run() {
                 then(getUserMedia, errorHandler).
                 then(setLocalMediaStream, errorHandler).
                 then(createOffer, errorHandler).
+                then(adjustMediaCodecPriority, errorHandler).
                 then(setLocalDescription, errorHandler).
                 then(sendLocalDescription, errorHandler).
                 then(requestRemoteDescription, errorHandler).
@@ -127,6 +137,7 @@ function run() {
                 then(getUserMedia, errorHandler).
                 then(setLocalMediaStream, errorHandler).
                 then(createAnswer, errorHandler).
+                then(adjustMediaCodecPriority, errorHandler).
                 then(setLocalDescription, errorHandler).
                 then(sendLocalDescription, errorHandler);
         }
@@ -196,9 +207,9 @@ function setMediaDeviceConstraints(devices) {
         audio: microphones.length > 0,
         video: cameras.length > 0 ? {
             // These are set so our MacBooks don't overheat.
-            width: { exact: 160},
-            height: { exact: 120 },
-            frameRate: { exact: 15 }
+            width: { exact: videoWidth },
+            height: { exact: videoHeight },
+            frameRate: { exact: videoFrameRate }
         } : false,
         optional: {
             DtlsSrtpKeyAgreement: true,
@@ -219,8 +230,7 @@ function getUserMedia(constraints) {
 }
 
 function setLocalMediaStream(localStream) {
-    console.log('Initialized browser Media.');
-    console.log('Local streams: ' + JSON.stringify(localStream, null, 4));
+    console.log('Initialized browser Media, adding tracks...');
     LocalVideo.srcObject = localStream;
     localStream.getTracks().forEach(track =>
        rtcPeerConnection.addTrack(track, localStream));
@@ -229,6 +239,60 @@ function setLocalMediaStream(localStream) {
 function createOffer() {
     console.log('Creating offer...');
     return rtcPeerConnection.createOffer(constraints.optional);
+}
+
+function adjustMediaCodecPriority(description) {
+    console.log('Configuring preferred codecs...');
+
+    // Iterate throuh all SDP lines and find media descriptions.
+    var sdpLines = description.sdp.split('\r\n');
+    var audioLineIndex, videoLineIndex, rtpmaps = {};
+    for (var idx = 0; idx < sdpLines.length; idx++) {
+        var sdpLine = sdpLines[idx];
+        if (sdpLine.startsWith('m=audio')) {
+            audioLineIndex = idx;
+        } else if (sdpLine.startsWith('m=video')) {
+            videoLineIndex = idx;
+        } else if (sdpLine.startsWith('a=rtpmap')) {
+            // a=rtpmap:110 telephone-event/48000
+            var regex = /a=rtpmap:(\d+) (\w+)\/*/;
+            var matches = sdpLine.match(regex)
+            var payload = matches[1];
+            var codec = matches[2];
+            rtpmaps[payload] = codec;
+        }
+    }
+
+    // Handle audio payload priority reordering.
+    var audioLineParts = sdpLines[audioLineIndex].split(' ');
+    for (var idx = 3, nextIdx = 3; idx < audioLineParts.length; idx++) {
+        var audioCodec = rtpmaps[parseInt(audioLineParts[idx])];
+        if (audioCodec.startsWith(preferredAudioCodec)) {
+            var temp = audioLineParts[nextIdx];
+            audioLineParts[nextIdx] = audioLineParts[idx];
+            audioLineParts[idx] = temp;
+            nextIdx++;
+        }
+    }
+    sdpLines[audioLineIndex] = audioLineParts.join(' ');
+
+    // Handle video payload priority reordering.
+    var videoLineParts = sdpLines[videoLineIndex].split(' ');
+    for (var idx = 3, nextIdx = 3; idx < videoLineParts.length; idx++) {
+        var videoCodec = rtpmaps[parseInt(videoLineParts[idx])];
+        if (videoCodec.startsWith(preferredVideoCodec)) {
+            var temp = videoLineParts[nextIdx];
+            videoLineParts[nextIdx] = videoLineParts[idx];
+            videoLineParts[idx] = temp;
+            nextIdx++;
+        }
+    }
+    sdpLines[videoLineIndex] = videoLineParts.join(' ');
+
+    // Reassemble adjusted SDP.
+    description.sdp = sdpLines.join('\r\n');
+
+    return description;
 }
 
 function setLocalDescription(description) {

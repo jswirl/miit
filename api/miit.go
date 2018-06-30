@@ -117,7 +117,7 @@ func RedirectRandomMiiting(ctx *gin.Context) {
 
 	// No miiting was available, respond accordingly.
 	abortWithStatusAndMessage(ctx, http.StatusNotFound,
-		"Failed to find available miitings")
+		"Failed to find available miitings to join")
 }
 
 // GetMiiting returns the main index page for requests.
@@ -133,7 +133,6 @@ func PushMiitAssets(ctx *gin.Context) {
 	if len(miitingID) <= 0 {
 		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
 			"Invalid miiting ID: [%s]", miitingID)
-		return
 		return
 	}
 
@@ -288,8 +287,7 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 		return
 	}
 
-	// Get the requested SDP from our miiting.
-	var sdp *sessionDescription
+	// Get the requested SDP channel from our miiting.
 	var sdpChan chan *sessionDescription
 	if sdpType == "offer" {
 		sdpChan = miiting.offerChan
@@ -302,6 +300,7 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	}
 
 	// Read & wait for the SDP to be submitted by the other client.
+	var sdp *sessionDescription
 	select {
 	case sdp = <-sdpChan:
 	case <-time.After(sdpWaitTimeout):
