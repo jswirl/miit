@@ -170,12 +170,15 @@ function run() {
 function tryCreateMiiting() {
     console.log('Trying to create miiting...');
 
-    // Compose request JSON.
-    var json = JSON.stringify({
+    // Get miiting name from request URL and compose request JSON.
+    var miitingID = apiUrl.split('/').pop();
+    var miitingsUrl = apiUrl.replace('/' + miitingID, '');
+    var miiting = {};
+    miiting[miitingID] = {
         'token': token,
-    });
+    };
 
-    return request('POST', apiUrl, json, true);
+    return request('POST', miitingsUrl, JSON.stringify(miiting), true);
 }
 
 function determineMiitingRole(xhr) {
@@ -215,7 +218,6 @@ function setupDataChannel() {
             addMessage(RemoteName.textContent, event.data);
     } else {
         rtcPeerConnection.ondatachannel = handleDataChannelConnected;
-
     }
 }
 
@@ -331,15 +333,14 @@ function sendLocalDescription() {
     console.log('Sending local description...');
 
     // Compose local SDP and ICE candidates JSON.
-    var json = JSON.stringify({
-        localSDPType(): {
-            'name': name,
-            'description': rtcPeerConnection.localDescription.sdp,
-            'ice_candidates': localIceCandidates,
-        }
-    });
+    var sdp = {}
+    sdp[localSDPType()] = {
+        'name': name,
+        'description': rtcPeerConnection.localDescription.sdp,
+    };
 
-    return request('POST', apiUrl, json, true);
+    return request('POST', apiUrl + '?token=' + token,
+        JSON.stringify(sdp), true);
 }
 
 function requestRemoteDescription() {
@@ -358,7 +359,7 @@ function receiveRemoteDescription(xhr) {
     // Parse received remote description and compose JSEP description.
     var json = JSON.parse(xhr.responseText);
     var jsep = {
-        'type': json.type,
+        'type': remoteSDPType(),
         'sdp': json.description,
     };
 
@@ -388,20 +389,17 @@ function sendLocalIceCandidates() {
 
     // Compose local SDP and ICE candidates JSON.
     var json = JSON.stringify({
-        localSDPType(): {
-            'name': name,
-            'description': rtcPeerConnection.localDescription.sdp,
-            'ice_candidates': localIceCandidates,
-        }
+        'ice_candidates': localIceCandidates,
     });
 
-    return request('PUT', apiUrl, json, true);
+    return request('POST', apiUrl + '/' + localSDPType() + '?token=' + token,
+        json, true);
 }
 
 function requestRemoteIceCandidates() {
     console.log('Requesting remote ICE candidates...');
     return request('GET', apiUrl + '/' + remoteSDPType() +
-        '?ice_only=true&token=' + token, null, true);
+        '/ice_candidates?token=' + token, null, true);
 }
 
 function receiveRemoteIceCandidates(xhr) {
