@@ -332,14 +332,14 @@ function sendLocalDescription() {
 
     // Compose local SDP and ICE candidates JSON.
     var json = JSON.stringify({
-        'name': name,
-        'type': localSDPType(),
-        'description': rtcPeerConnection.localDescription.sdp,
-        'ice_candidates': localIceCandidates,
+        localSDPType(): {
+            'name': name,
+            'description': rtcPeerConnection.localDescription.sdp,
+            'ice_candidates': localIceCandidates,
+        }
     });
 
-    return request('POST', apiUrl + '/' + localSDPType() + '?token=' + token,
-        json, true);
+    return request('POST', apiUrl, json, true);
 }
 
 function requestRemoteDescription() {
@@ -388,14 +388,14 @@ function sendLocalIceCandidates() {
 
     // Compose local SDP and ICE candidates JSON.
     var json = JSON.stringify({
-        'name': name,
-        'type': localSDPType(),
-        'description': rtcPeerConnection.localDescription.sdp,
-        'ice_candidates': localIceCandidates,
+        localSDPType(): {
+            'name': name,
+            'description': rtcPeerConnection.localDescription.sdp,
+            'ice_candidates': localIceCandidates,
+        }
     });
 
-    return request('PUT', apiUrl + '/' + localSDPType() + '?token=' + token,
-        json, true);
+    return request('PUT', apiUrl, json, true);
 }
 
 function requestRemoteIceCandidates() {
@@ -540,10 +540,13 @@ function addMessage(name, message) {
     var row = Messages.insertRow(-1);
     var nameCell = row.insertCell(0);
     var messageCell = row.insertCell(1);
-    nameCell.className = 'messageheader';
-    nameCell.textContent = name;
-    messageCell.className = 'message';
-    messageCell.textContent = message; 
+    var messageHeader = document.createElement('div');
+    messageHeader.className = 'messageheader';
+    messageHeader.textContent = name;
+    nameCell.className = 'messageheadercell';
+    nameCell.appendChild(messageHeader);
+    messageCell.className = 'messagetext';
+    messageCell.textContent = message;
     Messages.scrollTop = Messages.scrollHeight;
 }
 

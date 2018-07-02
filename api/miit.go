@@ -15,18 +15,17 @@ import (
 
 // miiting is the object representing a miiting.
 type miiting struct {
-	timestamp  time.Time                `json:"timestamp"`
-	tokens     []string                 `json:"-"`
-	offerChan  chan *sessionDescription `json:"-"`
-	answerChan chan *sessionDescription `json:"-"`
+	timestamp  time.Time        `json:"timestamp"`
+	tokens     []string         `json:"-"`
+	offerChan  chan interface{} `json:"-"`
+	answerChan chan interface{} `json:"-"`
 }
 
 // sessionDescription is the model of a offer/answer session description.
 type sessionDescription struct {
-	Name          string           `json:"name"`
-	Type          string           `json:"type"`
-	Description   *json.RawMessage `json:"description"`
-	IceCandidates []*iceCandidate  `json:"ice_candidates"`
+	Name        string           `json:"name"`
+	Type        string           `json:"type"`
+	Description *json.RawMessage `json:"description"`
 }
 
 // iceCandidate is the struct representing an ICE candidate of a peer.
@@ -64,13 +63,12 @@ func init() {
 	miitingsGroup := root.Group("miitings")
 	miitingsGroup.Use(middleware.Body(1024))
 	miitingsGroup.GET("", RedirectRandomMiiting)
+	miitingsGroup.POST("", CreateAndJoinMiiting)
 	miitingsGroup.GET(":miiting", GetMiiting)
-	miitingsGroup.POST(":miiting", CreateAndJoinMiiting)
+	miitingsGroup.POST(":miiting", SendDescription)
 	miitingsGroup.DELETE(":miiting", DeleteMiiting)
-	miitingsGroup.GET(":miiting/:type", ReceiveSDPAndICECandidates)
-	miitingsGroup.POST(":miiting/:type", SendSDPAndICECandidates)
-	// TODO: use PATCH and do partial updates instead.
-	miitingsGroup.PUT(":miiting/:type", SendSDPAndICECandidates)
+	miitingsGroup.GET(":miiting/:type", ReceiveDescription)
+	miitingsGroup.PUT(":miiting/:type", SendDescriptionAndIceCandidates)
 }
 
 // RedirectRandomMiiting is a handler that redirects the client to a random miiting.
@@ -183,8 +181,8 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	if !exists {
 		storedMiiting.timestamp = time.Now()
 		storedMiiting.tokens = append(storedMiiting.tokens, body["token"])
-		storedMiiting.offerChan = make(chan *sessionDescription, 1)
-		storedMiiting.answerChan = make(chan *sessionDescription, 1)
+		storedMiiting.offerChan = make(chan interface{}, 1)
+		storedMiiting.answerChan = make(chan interface{}, 1)
 		ctx.JSON(http.StatusCreated, storedMiiting)
 		return
 	}
@@ -237,8 +235,8 @@ func DeleteMiiting(ctx *gin.Context) {
 	}
 }
 
-// ReceiveSDPAndICECandidates is the handler for receiving SDP and ICE candidates.
-func ReceiveSDPAndICECandidates(ctx *gin.Context) {
+// ReceiveDescription is the handler for receiving a SDP offer / answer.
+func ReceiveDescription(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
 
@@ -288,7 +286,7 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	}
 
 	// Get the requested SDP channel from our miiting.
-	var sdpChan chan *sessionDescription
+	var sdpChan chan interface{}
 	if sdpType == "offer" {
 		sdpChan = miiting.offerChan
 	} else if sdpType == "answer" {
@@ -302,7 +300,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	// Read & wait for the SDP to be submitted by the other client.
 	var sdp *sessionDescription
 	select {
-	case sdp = <-sdpChan:
+	case data := <-sdpChan:
+		sdp = data.(*sessionDescription)
 	case <-time.After(sdpWaitTimeout):
 	}
 
@@ -321,8 +320,8 @@ func ReceiveSDPAndICECandidates(ctx *gin.Context) {
 	}
 }
 
-// SendSDPAndICECandidates is the handler for sending SDP and ICE candidates.
-func SendSDPAndICECandidates(ctx *gin.Context) {
+// SendDescription is the handler for sending a SDP offer / answer.
+func SendDescription(ctx *gin.Context) {
 	// Get the requested miiting ID from path params.
 	miitingID := ctx.Param("miiting")
 	if len(miitingID) <= 0 {
@@ -379,6 +378,14 @@ func SendSDPAndICECandidates(ctx *gin.Context) {
 
 	// Respond with empty JSON.
 	ctx.JSON(http.StatusOK, gin.H{})
+}
+
+// SendDescriptionAndIceCandidates is the handler for sending a SDP along with
+// the newly collected ICE candidates.
+func SendDescriptionAndIceCandidates(ctx *gin.Context) {
+	// NOTE: currently, we send the same SDP again with the new ICE candidates.
+	// TODO: use PATCH and do partial updates instead without the redundancy.
+	SendDescription(ctx)
 }
 
 // Check if the provided token is in our miiting tokens list.
