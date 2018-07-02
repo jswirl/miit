@@ -252,7 +252,7 @@ func ReceiveDescription(ctx *gin.Context) {
 	var sdp *sessionDescription
 	select {
 	case data := <-sdpChan:
-		sdp = data.(*sessionDescription)
+		sdp, _ = data.(*sessionDescription)
 	case <-time.After(sdpWaitTimeout):
 	}
 
@@ -329,7 +329,7 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	var iceCandidates []*iceCandidate
 	select {
 	case data := <-iceCandidatesChan:
-		iceCandidates = data.([]*iceCandidate)
+		iceCandidates, _ = data.([]*iceCandidate)
 	case <-time.After(sdpWaitTimeout):
 	}
 
