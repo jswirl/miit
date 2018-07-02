@@ -1,56 +1,119 @@
 <html>
     <head>
-        <meta charset="utf-8">
+        <!-- Dedicated to Zhe. -->
+        <meta charset='utf-8'>
         <title> miit </title>
-        <script src="/miit/miit.js"></script>
-        <style type="text/css">
-            .container {
-                border-width: 1px; border-color: #404040; border-style: solid;
+        <script src='/miit/miit.js'></script>
+        <style type='text/css'>
+            #Center {
+                width: 640; height: 500; margin: auto; padding: 0;
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            }
+            #Root {
+                border-width: 1px; border-color: #404040; border-style: solid;
                 width: 640; height: 480; margin: auto; padding: 0;
+                position: relative; top: 0; bottom: 0; left: 0; right: 0;
             }
-            .localcontainer {
-                border-width: 0; background: black; opacity: 1;
-                position: absolute; bottom: -1; right: -1;
-                width: 160; height: 120; margin: auto; padding: 0;
-            }
-            .remotecontainer {
-                border-width: 0; background: black; opacity: 1;
-                position: absolute; top: 0; left: 0;
-                width: 640; height: 480; margin: auto; padding: 0;
-            }
-            .localvideo {
+            #LocalContainer {
                 background: black; opacity: 1;
                 border-width: 1px; border-color: #404040; border-style: solid;
-                position: absolute; bottom: 0; right: 0;
+                width: 160; height: 120; margin: auto; padding: 0;
+                position: absolute; bottom: -1; right: -1; z-index: 2;
+            }
+            #RemoteContainer {
+                border-width: 0; background: black; opacity: 1;
+                width: 640; height: 480; margin: auto; padding: 0;
+                position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            }
+            #MessagesContainer {
+                background: transparent; overflow: hidden; opacity: 1;
+                border-width: 1px; border-color: #404040; border-style: solid;
+                width: 479; height: 120; margin: auto; padding: 0;
+                position: absolute; bottom: -1; left: -1; z-index: 1;
+            }
+            #LocalVideo {
+                border-width: 0; background: black; opacity: 1;
                 width: 160; height: 120; margin: 0; padding: 0;
             }
-            .remotevideo {
+            #RemoteVideo {
                 border-width: 0; background: black; opacity: 1;
-                position: absolute; top: 0; left: 0;
                 width: 640; height: 480; margin: 0; padding: 0;
             }
-            .localname {
+            #LocalName {
+                color: lightgrey;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
                 position: absolute; top: 0; left: 2; padding: 1; z-index: 1;
-                font-family: "Courier New", Courier, Monospace; font-size: 10; color: lightgrey;
             }
-            .remotename {
+            #RemoteName {
+                color: lightgrey;
+                font-family: 'Courier New', Courier, Monospace; font-size: 16;
                 position: absolute; top: 0; left: 2; padding: 1; z-index: 1;
-                font-family: "Courier New", Courier, Monospace; font-size: 16; color: lightgrey;
+            }
+            #Messages {
+                background: black; opacity: 0.5;
+                overflow-x: hidden; overflow-y: scroll; display: block;
+                width: 105%; height: 100%; padding-right: 50px;
+                position: absolute; bottom: 0; left: 0; padding: 0;
+            }
+            .messageHeader {
+                background: white; color: black; margin: 0; z-index: 1;
+                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+            }
+            .message {
+                background: black; color: white; margin: 0; z-index: 1;
+                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+            }
+            #MessageBarContainer {
+                z-index: 2;
+                border-width: 1px; border-color: #404040; border-style: solid;
+                width: 640; height: 20; margin: auto; padding: 0;
+                position: relative; top: -1; bottom: 0; left: 0; right: 0;
+            }
+            #MessageBarText {
+                color: darkgrey; background: black; border-width: 0;
+                width: 480; margin: 0; padding: 0;
+                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            }
+            #MessageBarFile { visibility: hidden; }
+            #MessageBarFileLabel {
+                color: darkgrey;
+                text-align: center; vertical-align: middle; line-height: 220%;
+                border-width: 1px; border-color: #404040; border-style: solid;
+                width: 79; margin: 0; padding: 0;
+                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                position: absolute; top: -1; bottom: -1; left: 479; right: 0;
+            }
+            #MessageBarButton {
+                color: darkgrey; background: black; border-width: 0;
+                display: block; width: 79; margin: 0; padding: 0;
+                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                position: absolute; top: 0; bottom: 0; left: 560; right: 0;
             }
         </style>
     </head>
-    <body bgcolor="black">
-        <div class="container">
-            <div class="remotecontainer">
-                <div class="remotename" id="RemoteName"></div>
-                <video class="remotevideo" id="RemoteVideo" autoplay playsinline></video>
+    <body bgcolor='black'>
+        <div id='Center'>
+            <div id='Root'>
+                <div id='RemoteContainer'>
+                    <div id='RemoteName'></div>
+                    <video id='RemoteVideo' autoplay playsinline></video>
+                </div>
+                <div id='LocalContainer'>
+                    <div id='LocalName'></div>
+                    <video id='LocalVideo' muted autoplay playsinline></video>
+                </div>
+                <div id='MessagesContainer'>
+                    <table id='Messages'></table>
+                </div>
             </div>
-            <div class="localcontainer">
-                <div class="localname" id="LocalName"></div>
-                <video class="localvideo" id="LocalVideo" muted autoplay playsinline></video>
+            <div id='MessageBarContainer'>
+                <input type='text' id='MessageBarText'>
+                <label for='MessageBarFile' id='MessageBarFileLabel'> ... </label>
+                <input type='file' id='MessageBarFile'>
+                <button type='button' id='MessageBarButton'> Send </button>
             </div>
         </div>
-        <script type="text/javascript"> main(); </script>
+        <script type='text/javascript'> main(); </script>
     </body>
 </html>

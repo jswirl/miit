@@ -1,4 +1,5 @@
-/* Author: Pu-Chen Mao (pujnmao@gmail.com) */
+/* Author: Pu-Chen Mao (pujnmao@gmail.com)
+ * Dedicated to Zhe. */
 
 /* API server URL */
 var apiUrl = window.location.href
@@ -6,16 +7,18 @@ var apiUrl = window.location.href
 /* Our user name to be displayed */
 var name = 'anonymous';
 
-/* The token used to create a miiting. */
+/* The token used to create and join a miiting. */
 var token = generateToken();
 
 /* Our role in the miiting session. */
 var isInitiator = true;
 
-/* WebRTC components and variables */
-var rtcPeerConnection;
+/* WebRTC variables & HTML components */
+var rtcPeerConnection, dataChannel;
 var LocalVideo, LocalName, RemoteVideo, RemoteVideo;
+var Messages, MessageBarText, MessageBarButton;
 var localIceCandidates = [];
+var quack = new Audio('/miit/quack.wav');
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
@@ -56,11 +59,19 @@ function main() {
 }
 
 function initialize() {
-    // Prepare video elements.
+    // Prepare HTML elements.
     LocalVideo = document.getElementById('LocalVideo');
     RemoteVideo = document.getElementById('RemoteVideo');
     LocalName= document.getElementById('LocalName');
     RemoteName= document.getElementById('RemoteName');
+    Messages = document.getElementById('Messages');
+    MessageBarText = document.getElementById('MessageBarText');
+    MessageBarButton= document.getElementById('MessageBarButton');
+
+    // Initialize HTML element state & handlers.
+    Messages.scrollTop = Messages.scrollHeight;
+    MessageBarText.addEventListener('keypress', handleMessageBarTextKey);
+    MessageBarButton.addEventListener('click', sendMessageAndData);
 
     // Polyfill to setup browser WebRTC components.
     window.URL =
@@ -80,11 +91,9 @@ function initialize() {
         window.RTCSessionDescription ||
         window.mozRTCSessionDescription ||
         window.webkitRTCSessionDescription;
-
-    // Handle miiting teardown when user leaves page.
-    window.onunload = deleteMiiting;
-    window.onbeforeunload = deleteMiiting;
     window.onpagehide = deleteMiiting;
+    window.onbeforeunload = deleteMiiting;
+    window.onunload = deleteMiiting;
 }
 
 function finalize() {
@@ -116,7 +125,7 @@ function run() {
         return;
     }
 
-    // Branched continuation of the the chain based on our role.
+    // Branched continuation of our Promise chain based on our role.
     var continueBasedOnRole = function() {
         if (isInitiator) {
             return enumerateMediaDevices().catch(errorHandler).
@@ -146,14 +155,15 @@ function run() {
     };
 
     // Execute promise chain for miiting setup.
-    tryCreateMiiting().catch(errorHandler).
-        then(determineMiitingRole, errorHandler).
-        then(createPeerConnection, errorHandler).
-        then(continueBasedOnRole, errorHandler).
-        then(sendLocalIceCandidates, errorHandler).
-        then(requestRemoteIceCandidates, errorHandler).
-        then(receiveRemoteIceCandidates, errorHandler).
-        then(setRemoteIceCandidates, errorHandler).
+    tryCreateMiiting().catch(abortOnError).
+        then(determineMiitingRole, abortOnError).
+        then(createPeerConnection, abortOnError).
+        then(setupDataChannel, abortOnError).
+        then(continueBasedOnRole, abortOnError).
+        then(sendLocalIceCandidates, abortOnError).
+        then(requestRemoteIceCandidates, abortOnError).
+        then(receiveRemoteIceCandidates, abortOnError).
+        then(setRemoteIceCandidates, abortOnError).
         catch(showError, showError);
 }
 
@@ -183,13 +193,30 @@ function determineMiitingRole(xhr) {
 
 function createPeerConnection() {
     console.log('Creating RTCPeerConnection...');
+
+    // Create the  peer connection to be used for media and data.
     rtcPeerConnection = new RTCPeerConnection(peerConnectionConfig);
     rtcPeerConnection.onicecandidate = storeLocalIceCandidate;
     rtcPeerConnection.ontrack = setRemoteMediaTrack;
     rtcPeerConnection.onremovetrack = handleMediaTrackRemoved;
     rtcPeerConnection.oniceconnectionstatechange = handleIceConnectionState;
-    rtcPeerConnection.onicegatheringstatechange = printStateChangeEvent;
-    rtcPeerConnection.onsignalingstatechange = printStateChangeEvent;
+    rtcPeerConnection.onicegatheringstatechange = handleStateChangeEvent;
+    rtcPeerConnection.onsignalingstatechange = handleStateChangeEvent;
+}
+
+function setupDataChannel() {
+    console.log('Creating DataChannel...');
+
+    // Create the datachannel from our peer connection.
+    if (isInitiator) {
+        dataChannel = rtcPeerConnection.createDataChannel(null);
+        console.log(dataChannel);
+        dataChannel.onmessage = event =>
+            addMessage(RemoteName.textContent, event.data);
+    } else {
+        rtcPeerConnection.ondatachannel = handleDataChannelConnected;
+
+    }
 }
 
 function enumerateMediaDevices() {
@@ -337,6 +364,7 @@ function receiveRemoteDescription(xhr) {
 
     // Set the remote peer name.
     RemoteName.innerHTML = json.name;
+    quack.play();
 
     return new RTCSessionDescription(jsep);
 }
@@ -427,17 +455,44 @@ function handleIceConnectionState(event) {
     }
 }
 
-function printStateChangeEvent(event) {
+function handleStateChangeEvent(event) {
     console.log('ICE gathering / signaling state change event: ');
     console.log(event);
+}
+
+function handleDataChannelConnected(event) {
+    console.log('DataChannel connected:');
+    console.log(event);
+
+    // Setup data channel handlers.
+    dataChannel = event.channel;
+    dataChannel.onmessage = function(event) {
+        addMessage(RemoteName.textContent, event.data);
+    }
+}
+
+function handleMessageBarTextKey(event) {
+    if (event.keyCode == 13) {
+        sendMessageAndData();
+    }
+}
+
+function sendMessageAndData() {
+    if (dataChannel && dataChannel.readyState == 'open'
+        && MessageBarText.value.length > 0) {
+        addMessage(name, MessageBarText.value);
+        dataChannel.send(MessageBarText.value);
+        MessageBarText.value = '';
+    }
 }
 
 function teardown() {
     console.log('Tearing down connection and finalizing resources...');
     deleteMiiting();
     if (rtcPeerConnection) {
-        finalize();
         RemoteName.innerHTML += ' disconnected.';
+        quack.play();
+        finalize();
         alert(RemoteName.innerHTML + ' ' + apiUrl +
             ' has been deleted. Please reload to create a new miiting.');
     }
@@ -481,6 +536,17 @@ function request(method, url, body, async) {
     });
 }
 
+function addMessage(name, message) {
+    var row = Messages.insertRow(-1);
+    var nameCell = row.insertCell(0);
+    var messageCell = row.insertCell(1);
+    nameCell.className = 'messageheader';
+    nameCell.textContent = name;
+    messageCell.className = 'message';
+    messageCell.textContent = message; 
+    Messages.scrollTop = Messages.scrollHeight;
+}
+
 function generateToken() {
     var token = "";
     var runes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -500,6 +566,10 @@ function remoteSDPType() {
 
 function errorHandler(error) {
     console.log(error);
+}
+
+function abortOnError(error) {
+    errorHandler(error);
     return Promise.reject(error);
 }
 
