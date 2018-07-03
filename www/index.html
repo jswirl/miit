@@ -36,6 +36,7 @@
                 border-width: 0; background: black; opacity: 1;
                 width: 160; height: 120; margin: 0; padding: 0;
             }
+
             #RemoteVideo {
                 border-width: 0; background: black; opacity: 1;
                 width: 640; height: 480; margin: 0; padding: 0;
@@ -52,36 +53,40 @@
             }
             #Messages {
                 background: black; opacity: 0.5;
-                overflow-x: hidden; overflow-y: auto; display: inline-block;
-                width: 100%; height: 100%; padding: 0;
                 border-spacing: 1; border-collapse: collapse;
+                width: 100%; height: 100%; padding: 0;
                 position: absolute; bottom: 0; left: 0;
+                overflow-x: hidden; overflow-y: auto; display: inline-block;
             }
             .MessageHeaderCell {
                 text-align: center; vertical-align: top;
-                width: 0; height: 0; margin: auto; padding: 2;
-                margin: 0; padding: 0;
+                width: 0; height: 100%; margin: 0; padding: 1;
             }
             .MessageHeader {
                 text-align: center; vertical-align: top; padding: 1;
                 background: white; color: black; margin: 0; z-index: 1;
                 font-family: 'Courier New', Courier, Monospace; font-size: 10;
             }
+            .MessageTextCell {
+                text-align: left; vertical-align: top; display: inline-block;
+                width: 100%; height: 100%; margin: 0; padding: 1;
+            }
             .MessageText {
-                text-align: left; vertical-align: top; line-height: 120%;
-                width: 100%; height: 0; margin: auto; padding: 2;
+                text-align: left; vertical-align: center;
+                display: inline-block; width: 100%; height: 100%; padding: 1;
                 background: black; color: white; margin: 0; z-index: 1;
                 font-family: 'Courier New', Courier, Monospace; font-size: 10;
             }
             #MessageBarContainer {
+                overflow: hidden; background: black;
                 border-width: 1; border-color: #404040; border-style: solid;
-                width: 640; height: 20; margin: auto; padding: 0; z-index: 2;
+                width: 640; height: 20; margin: 0; padding: 0; z-index: 1;
                 position: relative; top: -1; bottom: 0; left: 0; right: 0;
             }
             #MessageBarText {
                 color: darkgrey; background: black; border-width: 0;
                 text-align: left; vertical-align: middle; line-height: 220%;
-                width: 480; height: 100%; margin: 0; padding: 0;
+                width: 480; margin: 0; padding: 0;
                 font-family: 'Courier New', Courier, Monospace; font-size: 10;
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
             }
@@ -94,18 +99,18 @@
             }
             #MessageBarFile { visibility: hidden; }
             #MessageBarFileLabel {
-                color: darkgrey;
+                color: darkgrey; background: black;
                 text-align: center; vertical-align: middle; line-height: 220%;
                 border-width: 1; border-color: #404040; border-style: solid;
-                width: 59; height: 100%; margin: 0; padding: 0;
+                width: 59; margin: 0; padding: 0;
                 font-family: 'Courier New', Courier, Monospace; font-size: 9;
                 position: absolute; top: -1; bottom: -1; left: 499; right: 0;
             }
             #MessageBarButton {
                 color: darkgrey; background: black; border-width: 0;
-                display: block; width: 80; height: 100%; margin: 0; padding: 0;
+                width: 80; margin: 0; padding: 0;
                 font-family: 'Courier New', Courier, Monospace; font-size: 10;
-                position: absolute; top: 0; bottom: 0; left: 560; right: 0;
+                position: absolute; top: -1; bottom: -1; left: 560; right: 0;
             }
         </style>
     </head>

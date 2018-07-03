@@ -493,8 +493,6 @@ function teardown() {
         RemoteName.innerHTML += ' disconnected.';
         quack.play();
         finalize();
-        alert(RemoteName.innerHTML + ' ' + apiUrl +
-            ' has been deleted. Please reload to create a new miiting.');
     }
 }
 
@@ -537,16 +535,26 @@ function request(method, url, body, async) {
 }
 
 function addMessage(name, message) {
+    // Create new row in messages table.
     var row = Messages.insertRow(-1);
-    var nameCell = row.insertCell(0);
-    var messageCell = row.insertCell(1);
+
+    // Create new message header cell.
     var messageHeader = document.createElement('div');
     messageHeader.className = 'MessageHeader';
     messageHeader.textContent = name;
-    nameCell.className = 'MessageHeaderCell';
-    nameCell.appendChild(messageHeader);
-    messageCell.className = 'MessageText';
-    messageCell.textContent = message;
+    var messageHeaderCell = row.insertCell(0);
+    messageHeaderCell.className = 'MessageHeaderCell';
+    messageHeaderCell.appendChild(messageHeader);
+
+    // Create new message text cell.
+    var messageText = document.createElement('div');
+    messageText.className = 'MessageText';
+    messageText.textContent = message;
+    var messageTextCell = row.insertCell(1);
+    messageTextCell.className = 'MessageTextCell';
+    messageTextCell.appendChild(messageText);
+
+    // Scroll to bottom of table.
     Messages.scrollTop = Messages.scrollHeight;
 }
 
