@@ -10,13 +10,13 @@
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
             }
             #Root {
-                border-width: 1px; border-color: #404040; border-style: solid;
+                border-width: 1; border-color: #404040; border-style: solid;
                 width: 640; height: 480; margin: auto; padding: 0;
                 position: relative; top: 0; bottom: 0; left: 0; right: 0;
             }
             #LocalContainer {
                 background: black; opacity: 1;
-                border-width: 1px; border-color: #404040; border-style: solid;
+                border-width: 1; border-color: #404040; border-style: solid;
                 width: 160; height: 120; margin: auto; padding: 0;
                 position: absolute; bottom: -1; right: -1; z-index: 2;
             }
@@ -25,12 +25,13 @@
                 width: 640; height: 480; margin: auto; padding: 0;
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
             }
-            #MessagesContainer {
+            .MessagesContainer {
                 background: transparent; overflow: hidden; opacity: 1;
-                border-width: 1px; border-color: #404040; border-style: solid;
+                border-width: 1; border-color: #404040; border-style: solid;
                 width: 479; height: 120; margin: auto; padding: 0;
                 position: absolute; bottom: -1; left: -1; z-index: 1;
             }
+            .MessagesContainerMinimized { visibility: hidden; }
             #LocalVideo {
                 border-width: 0; background: black; opacity: 1;
                 width: 160; height: 120; margin: 0; padding: 0;
@@ -51,51 +52,59 @@
             }
             #Messages {
                 background: black; opacity: 0.5;
-                overflow-x: hidden; overflow-y: scroll; display: block;
-                width: 100%; height: 100%; padding-right: 50px;
-                border-spacing: 1px; border-collapse: collapse;
-                position: absolute; bottom: 0; left: 0; padding: 0;
+                overflow-x: hidden; overflow-y: auto; display: inline-block;
+                width: 100%; height: 100%; padding: 0;
+                border-spacing: 1; border-collapse: collapse;
+                position: absolute; bottom: 0; left: 0;
             }
-            .messageheadercell {
+            .MessageHeaderCell {
                 text-align: center; vertical-align: top;
+                width: 0; height: 0; margin: auto; padding: 2;
                 margin: 0; padding: 0;
             }
-            .messageheader {
-                text-align: center; vertical-align: top; padding: 1px;
+            .MessageHeader {
+                text-align: center; vertical-align: top; padding: 1;
                 background: white; color: black; margin: 0; z-index: 1;
-                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
             }
-            .messagetext {
+            .MessageText {
                 text-align: left; vertical-align: top; line-height: 120%;
-                margin: auto; padding: 2px;
+                width: 100%; height: 0; margin: auto; padding: 2;
                 background: black; color: white; margin: 0; z-index: 1;
-                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
             }
             #MessageBarContainer {
-                border-width: 1px; border-color: #404040; border-style: solid;
+                border-width: 1; border-color: #404040; border-style: solid;
                 width: 640; height: 20; margin: auto; padding: 0; z-index: 2;
                 position: relative; top: -1; bottom: 0; left: 0; right: 0;
             }
             #MessageBarText {
                 color: darkgrey; background: black; border-width: 0;
                 text-align: left; vertical-align: middle; line-height: 220%;
-                width: 480; margin: 0; padding: 0;
-                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                width: 480; height: 100%; margin: 0; padding: 0;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            }
+            #ToggleMessagesButton {
+                color: darkgrey; background: black;
+                border-width: 1; border-color: #404040; border-style: solid;
+                text-align: center; vertical-align: middle;
+                width: 21; margin: 0; padding: 0;
+                position: absolute; top: -1; bottom: -1; left: 479; right: 0;
             }
             #MessageBarFile { visibility: hidden; }
             #MessageBarFileLabel {
                 color: darkgrey;
                 text-align: center; vertical-align: middle; line-height: 220%;
-                border-width: 1px; border-color: #404040; border-style: solid;
-                width: 79; margin: 0; padding: 0;
+                border-width: 1; border-color: #404040; border-style: solid;
+                width: 59; height: 100%; margin: 0; padding: 0;
                 font-family: 'Courier New', Courier, Monospace; font-size: 9;
-                position: absolute; top: -1; bottom: -1; left: 479; right: 0;
+                position: absolute; top: -1; bottom: -1; left: 499; right: 0;
             }
             #MessageBarButton {
                 color: darkgrey; background: black; border-width: 0;
-                display: block; width: 79; margin: 0; padding: 0;
-                font-family: 'Courier New', Courier, Monospace; font-size: 9;
+                display: block; width: 80; height: 100%; margin: 0; padding: 0;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
                 position: absolute; top: 0; bottom: 0; left: 560; right: 0;
             }
         </style>
@@ -111,12 +120,13 @@
                     <div id='LocalName'></div>
                     <video id='LocalVideo' muted autoplay playsinline></video>
                 </div>
-                <div id='MessagesContainer'>
+                <div id='MessagesContainer' class='MessagesContainer'>
                     <table id='Messages'></table>
                 </div>
             </div>
             <div id='MessageBarContainer'>
                 <input type='text' id='MessageBarText'>
+                <button type='button' id='ToggleMessagesButton' onclick='toggleMessages()'>▁ </button>
                 <label for='MessageBarFile' id='MessageBarFileLabel'> ... </label>
                 <input type='file' id='MessageBarFile'>
                 <button type='button' id='MessageBarButton'> Send </button>

@@ -16,17 +16,17 @@ var isInitiator = true;
 /* WebRTC variables & HTML components */
 var rtcPeerConnection, dataChannel;
 var LocalVideo, LocalName, RemoteVideo, RemoteVideo;
-var Messages, MessageBarText, MessageBarButton;
+var ToggleMessagesButton, Messages, MessageBarText, MessageBarButton;
 var localIceCandidates = [];
 var quack = new Audio('/miit/quack.wav');
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
     iceServers: [
-        { url: 'stun:stunserver.org' },
-        { url: 'stun:stun.xten.com' },
-        { url: 'stun:stun.l.google.com:19302' },
-        { url: 'stun:stun.services.mozilla.com' },
+        { urls: 'stun:stunserver.org' },
+        { urls: 'stun:stun.xten.com' },
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' },
     ],
     bundlePolicy: 'max-compat',
     iceTransportPolicy: 'all',
@@ -62,8 +62,10 @@ function initialize() {
     // Prepare HTML elements.
     LocalVideo = document.getElementById('LocalVideo');
     RemoteVideo = document.getElementById('RemoteVideo');
-    LocalName= document.getElementById('LocalName');
-    RemoteName= document.getElementById('RemoteName');
+    LocalName = document.getElementById('LocalName');
+    RemoteName = document.getElementById('RemoteName');
+    ToggleMessagesButton = document.getElementById('ToggleMessagesButton');
+    MessagesContainer = document.getElementById('MessagesContainer');
     Messages = document.getElementById('Messages');
     MessageBarText = document.getElementById('MessageBarText');
     MessageBarButton= document.getElementById('MessageBarButton');
@@ -539,11 +541,11 @@ function addMessage(name, message) {
     var nameCell = row.insertCell(0);
     var messageCell = row.insertCell(1);
     var messageHeader = document.createElement('div');
-    messageHeader.className = 'messageheader';
+    messageHeader.className = 'MessageHeader';
     messageHeader.textContent = name;
-    nameCell.className = 'messageheadercell';
+    nameCell.className = 'MessageHeaderCell';
     nameCell.appendChild(messageHeader);
-    messageCell.className = 'messagetext';
+    messageCell.className = 'MessageText';
     messageCell.textContent = message;
     Messages.scrollTop = Messages.scrollHeight;
 }
@@ -580,5 +582,25 @@ function showError(object) {
         alert(JSON.parse(object.responseText).error);
     } else {
         alert(object);
+    }
+}
+
+/* Below is UI-related handling */
+
+/* The state of our messages box */
+var messagesMinimized = false;
+
+/* Toggle the maximized / minimized state of the message box. */
+function toggleMessages() {
+    console.log('pressed');
+    messagesMinimized = !messagesMinimized;
+    if (messagesMinimized) {
+        MessagesContainer.className = 'MessagesContainerMinimized';
+        ToggleMessagesButton.textContent = '█';
+        Messages.scrollTop = Messages.scrollHeight;
+    } else {
+        MessagesContainer.className = 'MessagesContainer';
+        ToggleMessagesButton.textContent = '▁';
+        Messages.scrollTop = Messages.scrollHeight;
     }
 }
