@@ -57,27 +57,28 @@ func init() {
 
 	// Obtain the root router group.
 	root := GetRoot()
-
-	// Create router group for miit assets.
-	// TODO: remove this when HTTP/2 server push is available.
-	miitGroup := root.Group("miit")
-	miitGroup.Static("/", miitAssetsPath)
+	// TODO:use PushMiitAssets when HTTP/2 server push is available.
+	root.Static("/files", miitAssetsPath)
+	root.GET("/random", RedirectToRandomMiiting)
 
 	// Create router group for miiting module and register handlers.
 	miitingsGroup := root.Group("miitings")
-	miitingsGroup.Use(middleware.Body(1024))
-	miitingsGroup.GET("", RedirectToRandomMiiting)
-	miitingsGroup.POST("", CreateAndJoinMiiting)
 	miitingsGroup.GET(":miiting", GetMiiting)
+	miitingsGroup.POST("", CreateAndJoinMiiting)
+	miitingsGroup.POST("/", CreateAndJoinMiiting)
 	miitingsGroup.DELETE(":miiting", DeleteMiiting)
 	miitingsGroup.POST(":miiting", SendDescription)
-	miitingsGroup.GET(":miiting/:type", ReceiveDescription)
-	miitingsGroup.POST(":miiting/:type", SendIceCandidates)
-	miitingsGroup.GET(":miiting/:type/ice_candidates", ReceiveIceCandidates)
+	miitingsGroup.GET(":miiting/:sdp_type", ReceiveDescription)
+	miitingsGroup.POST(":miiting/:sdp_type", SendIceCandidates)
+	miitingsGroup.GET(":miiting/:sdp_type/ice_candidates", ReceiveIceCandidates)
 }
 
-// RedirectToRandomMiiting is a handler that redirects
-// the client to a random miiting.
+// GetMiiting returns the entry page of the specific request.
+func GetMiiting(ctx *gin.Context) {
+	ctx.File(indexPagePath)
+}
+
+// RedirectToRandomMiiting is a handler that redirects the client to a random miiting.
 func RedirectToRandomMiiting(ctx *gin.Context) {
 	// Get logger instance.
 	logger := middleware.GetLogger(ctx)
@@ -91,7 +92,9 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 		miiting := value.(*miiting)
 
 		// Make sure the meeting is not established and ongoing.
-		if len(miiting.tokens) >= 2 {
+		// "cafeteria" is reserved for Zhe & Mao.
+		if len(miiting.tokens) >= 2 ||
+			miitingID == "cafeteria" {
 			return true
 		}
 
@@ -113,7 +116,7 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 
 	// Redirect to the target URL if a miiting was chosen.
 	if len(chosen) > 0 {
-		url := fmt.Sprintf("%s/%s", ctx.Request.URL.EscapedPath(), chosen)
+		url := fmt.Sprintf("/%s", chosen)
 		logger.Debug("Redirecting to randomly chosen miiting: [%s]", url)
 		ctx.Redirect(http.StatusTemporaryRedirect, url)
 		return
@@ -122,12 +125,6 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 	// No miiting was available, respond accordingly.
 	abortWithStatusAndMessage(ctx, http.StatusNotFound,
 		"Failed to find available miitings to join")
-}
-
-// GetMiiting returns the main index page for requests.
-func GetMiiting(ctx *gin.Context) {
-	// We return the main index page no matter the requested resource.
-	ctx.File(indexPagePath)
 }
 
 // PushMiitAssets is the handler for pushing the miit assets to clients.
@@ -402,7 +399,7 @@ func extractParameters(ctx *gin.Context, typeRequired bool) (
 	miiting := value.(*miiting)
 
 	// Get the requested SDP type from path params.
-	sdpType := ctx.Param("type")
+	sdpType := ctx.Param("sdp_type")
 	if len(sdpType) <= 0 && typeRequired {
 		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
 			"Invalid SDP type: [%s]", sdpType)

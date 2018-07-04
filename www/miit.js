@@ -2,7 +2,10 @@
  * Dedicated to Zhe. */
 
 /* API server URL */
-var apiUrl = window.location.href
+var href = window.location.href
+var miitingID = href.split('/').pop();
+var miitingsUrl =  href.replace(miitingID, 'miitings');
+var apiUrl = miitingsUrl + '/' + miitingID;
 
 /* Our user name to be displayed */
 var name = 'anonymous';
@@ -18,7 +21,7 @@ var rtcPeerConnection, dataChannel;
 var LocalVideo, LocalName, RemoteVideo, RemoteVideo;
 var ToggleMessagesButton, Messages, MessageBarText, MessageBarButton;
 var localIceCandidates = [];
-var quack = new Audio('/miit/quack.wav');
+var quack = new Audio('/files/quack.wav');
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
@@ -52,6 +55,10 @@ function main() {
 
     // Prompt user for name.
     name = prompt('Please enter your name:', name);
+    if (name == null) {
+        return;
+    }
+
     LocalName.innerHTML = name;
 
     // Start miiting setup sequence here.
@@ -172,9 +179,7 @@ function run() {
 function tryCreateMiiting() {
     console.log('Trying to create miiting...');
 
-    // Get miiting name from request URL and compose request JSON.
-    var miitingID = apiUrl.split('/').pop();
-    var miitingsUrl = apiUrl.replace('/' + miitingID, '');
+    // Compose request JSON.
     var miiting = {};
     miiting[miitingID] = {
         'token': token,
@@ -478,6 +483,7 @@ function handleMessageBarTextKey(event) {
 }
 
 function sendMessageAndData() {
+    MessageBarButton.blur();
     if (dataChannel && dataChannel.readyState == 'open'
         && MessageBarText.value.length > 0) {
         addMessage(name, MessageBarText.value);
@@ -600,15 +606,16 @@ var messagesMinimized = false;
 
 /* Toggle the maximized / minimized state of the message box. */
 function toggleMessages() {
-    console.log('pressed');
     messagesMinimized = !messagesMinimized;
     if (messagesMinimized) {
         MessagesContainer.className = 'MessagesContainerMinimized';
         ToggleMessagesButton.textContent = '█';
-        Messages.scrollTop = Messages.scrollHeight;
     } else {
         MessagesContainer.className = 'MessagesContainer';
         ToggleMessagesButton.textContent = '▁';
-        Messages.scrollTop = Messages.scrollHeight;
     }
+
+    // Scroll to the newest bottom messages, clear focus.
+    Messages.scrollTop = Messages.scrollHeight;
+    ToggleMessagesButton.blur();
 }
