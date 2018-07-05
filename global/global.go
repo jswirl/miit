@@ -1,5 +1,7 @@
 package global
 
+import "context"
+
 // Status flags for Kubernetes probes. Ideally, these should be protected by
 // mutexes, but since we will most likely access these variables from only a
 // few places, lets spare the trouble.
@@ -24,3 +26,15 @@ var GitCommitHash string
 // BuildTime is the time at which this binary was built. The value of this
 // string is set automatically by the build script.
 var BuildTime string
+
+// Context is the global context used to sync all goroutines. All contexts used
+// should be derived children from this context.
+var Context context.Context
+
+// Cancel is the accompanying global context cancel function.
+var Cancel context.CancelFunc
+
+func init() {
+	// Create global root context and cancel function.
+	Context, Cancel = context.WithCancel(context.Background())
+}

@@ -13,6 +13,9 @@ var name = 'anonymous';
 /* The token used to create and join a miiting. */
 var token = generateToken();
 
+/* Keep-alive task handle */
+var keepAliveHandle;
+
 /* Our role in the miiting session. */
 var isInitiator = true;
 
@@ -106,6 +109,9 @@ function initialize() {
 }
 
 function finalize() {
+    // Stop sending keep-alives.
+    clearInterval(keepAliveHandle);
+
     // Remove all tracks from remote video component.
     if (RemoteVideo.srcObject) {
         RemoteVideo.srcObject.getTracks().forEach(track => track.stop());
@@ -166,6 +172,7 @@ function run() {
     // Execute promise chain for miiting setup.
     tryCreateMiiting().catch(abortOnError).
         then(determineMiitingRole, abortOnError).
+        then(beginKeepAlive, abortOnError).
         then(createPeerConnection, abortOnError).
         then(setupDataChannel, abortOnError).
         then(continueBasedOnRole, abortOnError).
@@ -199,6 +206,22 @@ function determineMiitingRole(xhr) {
     }
 
     isInitiator = false;
+}
+
+function beginKeepAlive() {
+    keepAliveHandle = setInterval(sendKeepAliveRequest, 10000);
+}
+
+function sendKeepAliveRequest() {
+    request('PATCH', apiUrl + '?token=' + token, '{}', true).
+        then(handleKeepAliveResponse, abortOnError).
+        catch(showError, showError);
+}
+
+function handleKeepAliveResponse(xhr) {
+    if (xhr.status >= 400) {
+        teardown();
+    }
 }
 
 function createPeerConnection() {
@@ -388,9 +411,6 @@ function createAnswer() {
     return rtcPeerConnection.createAnswer(constraints.optional);
 }
 
-// NOTE: for laziness' sake, we just send to the same API endpoint to receive
-// our ICE candidates, this will result in sending a redudant SDP, we should
-// change to use partial updates with PATCH in the future.
 function sendLocalIceCandidates() {
     console.log('Sending local ICE candidates...');
 
@@ -523,17 +543,17 @@ function request(method, url, body, async) {
                 console.log(xhr.responseText)
                 reject(xhr);
             }
-        }
+        };
 
         // Setup request exception handler.
         exceptionHandler = function(error) {
             reject('request failed due to timeout / network error');
             return errorHandler(error)
-        }
+        };
 
         // Setup error & request timeout handlers.
-        xhr.onerror = exceptionHandler
-        xhr.ontimeout = exceptionHandler
+        xhr.onerror = exceptionHandler;
+        xhr.ontimeout = exceptionHandler;
 
         // Send our request here.
         xhr.send(body);

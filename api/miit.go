@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,17 +11,23 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/jswirl/miit/api/middleware"
 	"github.com/jswirl/miit/config"
+	"github.com/jswirl/miit/global"
+	"github.com/jswirl/miit/logging"
 )
 
 // miiting is the object representing a miiting.
 type miiting struct {
-	id         string           `json:"-"`
-	timestamp  time.Time        `json:"-"`
-	tokens     []string         `json:"-"`
-	offerChan  chan interface{} `json:"-"`
-	answerChan chan interface{} `json:"-"`
+	id         string               `json:"-"`
+	ctx        context.Context      `json:"-"`
+	cancel     context.CancelFunc   `json:"-"`
+	once       sync.Once            `json:"-"`
+	timestamp  time.Time            `json:"-"`
+	tokens     map[string]time.Time `json:"-"`
+	offerChan  chan interface{}     `json:"-"`
+	answerChan chan interface{}     `json:"-"`
 }
 
 // sessionDescription is the model of a offer/answer session description.
@@ -47,6 +54,9 @@ var miitAssetsPath string
 var indexPagePath string
 var scriptPath string
 var sdpWaitTimeout time.Duration
+var keepAliveInterval time.Duration
+var keepAliveTimeout time.Duration
+var keepAliveTimeoutNanoseconds int64
 
 func init() {
 	// Load asset configuration paths.
@@ -54,6 +64,9 @@ func init() {
 	indexPagePath = config.GetString("MIIT_INDEX_PAGE_PATH")
 	scriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
 	sdpWaitTimeout = config.GetMilliseconds("MIIT_SDP_WAIT_TIMEOUT")
+	keepAliveInterval = config.GetMilliseconds("MIIT_KEEPALIVE_INTERVAL")
+	keepAliveTimeout = config.GetMilliseconds("MIIT_KEEPALIVE_TIMEOUT")
+	keepAliveTimeoutNanoseconds = keepAliveTimeout.Nanoseconds()
 
 	// Obtain the root router group.
 	root := GetRoot()
@@ -66,16 +79,12 @@ func init() {
 	miitingsGroup.GET(":miiting", GetMiiting)
 	miitingsGroup.POST("", CreateAndJoinMiiting)
 	miitingsGroup.POST("/", CreateAndJoinMiiting)
+	miitingsGroup.PATCH(":miiting", KeepAlive)
 	miitingsGroup.DELETE(":miiting", DeleteMiiting)
 	miitingsGroup.POST(":miiting", SendDescription)
 	miitingsGroup.GET(":miiting/:sdp_type", ReceiveDescription)
 	miitingsGroup.POST(":miiting/:sdp_type", SendIceCandidates)
 	miitingsGroup.GET(":miiting/:sdp_type/ice_candidates", ReceiveIceCandidates)
-}
-
-// GetMiiting returns the entry page of the specific request.
-func GetMiiting(ctx *gin.Context) {
-	ctx.File(indexPagePath)
 }
 
 // RedirectToRandomMiiting is a handler that redirects the client to a random miiting.
@@ -125,6 +134,11 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 	// No miiting was available, respond accordingly.
 	abortWithStatusAndMessage(ctx, http.StatusNotFound,
 		"Failed to find available miitings to join")
+}
+
+// GetMiiting returns the entry page of the specific request.
+func GetMiiting(ctx *gin.Context) {
+	ctx.File(indexPagePath)
 }
 
 // PushMiitAssets is the handler for pushing the miit assets to clients.
@@ -180,13 +194,17 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	// Check and create the miiting if it doesn't exist.
 	value := miiting{}
 	miitingIntf, exists := miitings.LoadOrStore(miitingID, &value)
-	storedMiiting := miitingIntf.(*miiting)
+	storedMiiting, _ := miitingIntf.(*miiting)
 	if !exists {
 		storedMiiting.id = miitingID
 		storedMiiting.timestamp = time.Now()
-		storedMiiting.tokens = append(storedMiiting.tokens, token)
+		storedMiiting.tokens = map[string]time.Time{}
+		storedMiiting.tokens[token] = time.Now()
 		storedMiiting.offerChan = make(chan interface{}, 1)
 		storedMiiting.answerChan = make(chan interface{}, 1)
+		storedMiiting.ctx, storedMiiting.cancel =
+			context.WithCancel(global.Context)
+		go miitingMonitor(storedMiiting)
 		ctx.JSON(http.StatusCreated, storedMiiting)
 		return
 	}
@@ -194,7 +212,7 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	// At most two users are allowed to join a miiting.
 	if len(storedMiiting.tokens) < 2 {
 		// Add to the list of participating user tokens. if
-		storedMiiting.tokens = append(storedMiiting.tokens, token)
+		storedMiiting.tokens[token] = time.Now()
 		ctx.JSON(http.StatusOK, storedMiiting)
 		return
 	}
@@ -202,6 +220,30 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	// Two clients have already joined, reject the request.
 	abortWithStatusAndMessage(ctx, http.StatusTooManyRequests,
 		"Cannot join ongoing miiting [%s]", miitingID)
+}
+
+// KeepAlive is the handler for keep-alive requests.
+func KeepAlive(ctx *gin.Context) {
+	// Extract parameters from request.
+	miiting, _, token, err := extractParameters(ctx, false)
+	if err != nil {
+		return
+	}
+
+	// Check if token is valid before refreshing timestamps.
+	if !tokenIsValid(miiting, token) {
+		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
+			"Unauthorized token: [%s]", token)
+		return
+	}
+
+	// Update timestamps.
+	now := time.Now()
+	miiting.timestamp = now
+	miiting.tokens[token] = now
+
+	// Done refreshing timestamps, return empty response.
+	ctx.JSON(http.StatusOK, gin.H{})
 }
 
 // DeleteMiiting is the handler for requests deleting a miiting.
@@ -217,10 +259,7 @@ func DeleteMiiting(ctx *gin.Context) {
 		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
 			"Unauthorized token: [%s]", token)
 	} else {
-		// Close open channels so waiting
-		close(miiting.offerChan)
-		close(miiting.answerChan)
-		miitings.Delete(miiting.id)
+		deleteMiiting(miiting.id)
 		ctx.JSON(http.StatusOK, gin.H{})
 	}
 }
@@ -251,6 +290,7 @@ func ReceiveDescription(ctx *gin.Context) {
 	case data := <-sdpChan:
 		sdp, _ = data.(*sessionDescription)
 	case <-time.After(sdpWaitTimeout):
+	case <-global.Context.Done():
 	}
 
 	// Respond with error code if waiting for the description has timed out.
@@ -328,6 +368,7 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	case data := <-iceCandidatesChan:
 		iceCandidates, _ = data.([]*iceCandidate)
 	case <-time.After(sdpWaitTimeout):
+	case <-global.Context.Done():
 	}
 
 	// Respond with error code if waiting for ICE candidates has timed out.
@@ -417,20 +458,6 @@ func extractParameters(ctx *gin.Context, typeRequired bool) (
 	return miiting, sdpType, token, nil
 }
 
-// Check if the provided token is in our miiting tokens list.
-func tokenIsValid(miiting *miiting, token string) bool {
-	// Iterate through all tokens in our miiting.
-	exists := false
-	for idx := range miiting.tokens {
-		if miiting.tokens[idx] == token {
-			exists = true
-			break
-		}
-	}
-
-	return exists
-}
-
 // Abort request processing and respond with error message.
 func abortWithStatusAndMessage(ctx *gin.Context, status int,
 	format string, arguments ...interface{}) {
@@ -438,4 +465,65 @@ func abortWithStatusAndMessage(ctx *gin.Context, status int,
 	message := fmt.Sprintf(format, arguments...)
 	ctx.AbortWithStatusJSON(status, gin.H{"error": message})
 	logger.Error(message)
+}
+
+// miitingMonitor is the goroutine for monitoring the state of a miiting.
+func miitingMonitor(miiting *miiting) {
+	// Keep a copy of miiting ID, since it may be deleted while sleeping.
+	miitingID := miiting.id
+	defer logging.Debug("miiting [%s] monitor exited", miitingID)
+
+	// Keep monitoring miiting status until context is cancelled.
+	for miiting.ctx.Err() == nil {
+		// Perform session timeout invalidation.
+		elapsed := time.Since(miiting.timestamp).Nanoseconds()
+		if elapsed > keepAliveTimeoutNanoseconds {
+			logging.Info("miiting [%s] has timed-out", miitingID)
+			deleteMiiting(miitingID)
+			return
+		}
+
+		// Perform individual participant timeout invalidation.
+		for token, timestamp := range miiting.tokens {
+			elapsed := time.Since(timestamp).Nanoseconds()
+			if elapsed > keepAliveTimeoutNanoseconds {
+				logging.Info("Token [%s] of [%s] has timed-out",
+					token, miitingID)
+				deleteMiiting(miitingID)
+				return
+			}
+		}
+
+		// Sleep until next invalidation check.
+		select {
+		case <-time.After(keepAliveTimeout):
+		case <-miiting.ctx.Done():
+		}
+	}
+}
+
+// deleteMiiting removes the miiting from the miitings map.
+func deleteMiiting(miitingID string) {
+	// Lookup the requested miiting.
+	value, exists := miitings.Load(miitingID)
+	if !exists {
+		return
+	}
+
+	// Convert to miiting and perform deletion / close / etc.
+	if miiting, ok := value.(*miiting); ok {
+		miiting.once.Do(func() {
+			defer miitings.Delete(miitingID)
+			defer miiting.cancel()
+			close(miiting.offerChan)
+			close(miiting.answerChan)
+		})
+	}
+}
+
+// Check if the provided token is in our miiting tokens;
+func tokenIsValid(miiting *miiting, token string) bool {
+	// Iterate through all tokens in our miiting.
+	_, exists := miiting.tokens[token]
+	return exists
 }
