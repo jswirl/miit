@@ -1,5 +1,5 @@
 /* Author: Pu-Chen Mao (pujnmao@gmail.com)
- * Dedicated to Zhe. */
+ * For Zhe */
 
 /* API server URL */
 var href = window.location.href
@@ -7,32 +7,34 @@ var miitingID = href.split('/').pop();
 var miitingsUrl =  href.replace(miitingID, 'miitings');
 var apiUrl = miitingsUrl + '/' + miitingID;
 
-/* Our user name to be displayed */
-var name = 'anonymous';
+/* Our name and our peer's name to be displayed */
+var localName = 'anonymous';
+var remoteName = 'anonymous';
 
 /* The token used to create and join a miiting. */
 var token = generateToken();
 
-/* Keep-alive task handle */
+/* Keep-alive task handle and send interval in milliseconds */
 var keepAliveHandle;
+var keepAliveInterval = 10000;
 
 /* Our role in the miiting session. */
 var isInitiator = true;
 
 /* WebRTC variables & HTML components */
-var rtcPeerConnection, dataChannel;
-var LocalVideo, LocalName, RemoteVideo, RemoteVideo;
+var rtcPeerConnection, messageChannel, fileChannel;
+var LocalVideo, LocalName, RemoteVideo, RemoteName;
 var ToggleMessagesButton, Messages, MessageBarText, MessageBarButton;
 var localIceCandidates = [];
-var quack = new Audio('/files/quack.wav');
+var quack;
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
     iceServers: [
-        { urls: 'stun:stunserver.org' },
-        { urls: 'stun:stun.xten.com' },
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun.services.mozilla.com' },
+        { urls: 'stun:stun.xten.com' },
+        // { urls: 'stun:stunserver.org' },
+        // { urls: 'stun:stun.services.mozilla.com' },
     ],
     bundlePolicy: 'max-compat',
     iceTransportPolicy: 'all',
@@ -53,16 +55,19 @@ var videoSettings = {
 }
 
 function main() {
+    // Prompt user for name.
+    localName = prompt('Please enter your name:', localName);
+
     // Initialize browser Media API & DOM elements.
     initialize();
 
-    // Prompt user for name.
-    name = prompt('Please enter your name:', name);
-    if (name == null) {
+    // Stop execution if user clicked cancel.
+    if (localName == null) {
         return;
+    } else {
+        // Set local name to user input name.
+        LocalName.textContent = localName;
     }
-
-    LocalName.innerHTML = name;
 
     // Start miiting setup sequence here.
     run();
@@ -81,9 +86,13 @@ function initialize() {
     MessageBarButton= document.getElementById('MessageBarButton');
 
     // Initialize HTML element state & handlers.
+    RemoteName.style.visibility = 'hidden';
     Messages.scrollTop = Messages.scrollHeight;
     MessageBarText.addEventListener('keypress', handleMessageBarTextKey);
     MessageBarButton.addEventListener('click', sendMessageAndData);
+
+    // Load notification sounds.
+    quack = new Audio('/files/quack.wav');
 
     // Polyfill to setup browser WebRTC components.
     window.URL =
@@ -111,6 +120,7 @@ function initialize() {
 function finalize() {
     // Stop sending keep-alives.
     clearInterval(keepAliveHandle);
+    keepAliveHandle = null;
 
     // Remove all tracks from remote video component.
     if (RemoteVideo.srcObject) {
@@ -122,6 +132,18 @@ function finalize() {
     if (LocalVideo.srcObject) {
         LocalVideo.srcObject.getTracks().forEach(track => track.stop());
         LocalVideo.srcObject = null;
+    }
+
+    // Close messaging datachannel.
+    if (messageChannel) {
+        messageChannel.close();
+        messageChannel = null;
+    }
+
+    // Close file transfer datachannel.
+    if (fileChannel) {
+        fileChannel.close();
+        fileChannel = null;
     }
 
     // Close our RTCPeerConnection.
@@ -174,7 +196,7 @@ function run() {
         then(determineMiitingRole, abortOnError).
         then(beginKeepAlive, abortOnError).
         then(createPeerConnection, abortOnError).
-        then(setupDataChannel, abortOnError).
+        then(setupDataChannels, abortOnError).
         then(continueBasedOnRole, abortOnError).
         then(sendLocalIceCandidates, abortOnError).
         then(requestRemoteIceCandidates, abortOnError).
@@ -209,13 +231,12 @@ function determineMiitingRole(xhr) {
 }
 
 function beginKeepAlive() {
-    keepAliveHandle = setInterval(sendKeepAliveRequest, 10000);
+    keepAliveHandle = setInterval(sendKeepAliveRequest, keepAliveInterval);
 }
 
 function sendKeepAliveRequest() {
     request('PATCH', apiUrl + '?token=' + token, '{}', true).
-        then(handleKeepAliveResponse, abortOnError).
-        catch(showError, showError);
+        then(handleKeepAliveResponse).catch(teardown);
 }
 
 function handleKeepAliveResponse(xhr) {
@@ -237,17 +258,23 @@ function createPeerConnection() {
     rtcPeerConnection.onsignalingstatechange = handleStateChangeEvent;
 }
 
-function setupDataChannel() {
+function setupDataChannels() {
     console.log('Creating DataChannel...');
 
     // Create the datachannel from our peer connection.
-    if (isInitiator) {
-        dataChannel = rtcPeerConnection.createDataChannel(null);
-        console.log(dataChannel);
-        dataChannel.onmessage = event =>
-            addMessage(RemoteName.textContent, event.data);
-    } else {
+    if (!isInitiator) {
         rtcPeerConnection.ondatachannel = handleDataChannelConnected;
+    } else {
+        // Setup datachannel for messaging.
+        messageChannel = rtcPeerConnection.createDataChannel('message');
+        console.log(messageChannel);
+        messageChannel.onmessage = event =>
+            addMessage(remoteName, event.data);
+        // Setup datachannel for file transfesr.
+        fileChannel = rtcPeerConnection.createDataChannel('file');
+        console.log(fileChannel);
+        fileChannel.onmessage = event =>
+            addMessage(remoteName, event.data);
     }
 }
 
@@ -365,7 +392,7 @@ function sendLocalDescription() {
     // Compose local SDP and ICE candidates JSON.
     var sdp = {}
     sdp[localSDPType()] = {
-        'name': name,
+        'name': localName,
         'description': rtcPeerConnection.localDescription.sdp,
     };
 
@@ -377,7 +404,7 @@ function requestRemoteDescription() {
     console.log('Requesting remote description...');
 
     // Show that we are now waiting for the other end to join.
-    RemoteName.innerHTML = 'Waiting...';
+    addMessage(null, 'Waiting for peer to join...');
 
     return request('GET', apiUrl + '/' + remoteSDPType() + '?token=' + token,
         null, true);
@@ -394,7 +421,9 @@ function receiveRemoteDescription(xhr) {
     };
 
     // Set the remote peer name.
-    RemoteName.innerHTML = json.name;
+    remoteName = json.name;
+    addMessage(null, '\"' + remoteName + '\" joined.');
+    addMessage(null, 'Connecting with \"' + remoteName + '\"...');
     quack.play();
 
     return new RTCSessionDescription(jsep);
@@ -437,6 +466,9 @@ function receiveRemoteIceCandidates(xhr) {
 function setRemoteIceCandidates(iceCandidates) {
     console.log('Setting remote ICE candidates: ');
     console.log(iceCandidates);
+    RemoteName.textContent = remoteName;
+    RemoteName.style.visibility = 'visible';
+    addMessage(null, 'Connected with \"' + remoteName + '\".');
     iceCandidates.forEach(iceCandidate =>
         rtcPeerConnection.addIceCandidate(iceCandidate).
         catch(errorHandler));
@@ -489,10 +521,18 @@ function handleDataChannelConnected(event) {
     console.log('DataChannel connected:');
     console.log(event);
 
-    // Setup data channel handlers.
-    dataChannel = event.channel;
-    dataChannel.onmessage = function(event) {
-        addMessage(RemoteName.textContent, event.data);
+    if (event.channel.label == 'message') {
+        // Setup data channel handlers for messaging.
+        messageChannel = event.channel;
+        messageChannel.onmessage = function(event) {
+            addMessage(RemoteName.textContent, event.data);
+        }
+    } else if (event.channel.label == 'file') {
+        // Setup data channel handlers for file transfer.
+        fileChannel = event.channel;
+        fileChannel.onmessage = function(event) {
+            addMessage(RemoteName.textContent, event.data);
+        }
     }
 }
 
@@ -504,10 +544,10 @@ function handleMessageBarTextKey(event) {
 
 function sendMessageAndData() {
     MessageBarButton.blur();
-    if (dataChannel && dataChannel.readyState == 'open'
+    if (messageChannel && messageChannel.readyState == 'open'
         && MessageBarText.value.length > 0) {
-        addMessage(name, MessageBarText.value);
-        dataChannel.send(MessageBarText.value);
+        addMessage(localName, MessageBarText.value);
+        messageChannel.send(MessageBarText.value);
         MessageBarText.value = '';
     }
 }
@@ -516,7 +556,9 @@ function teardown() {
     console.log('Tearing down connection and finalizing resources...');
     deleteMiiting();
     if (rtcPeerConnection) {
-        RemoteName.innerHTML += ' disconnected.';
+        RemoteName.style.visibility = 'hidden';
+        addMessage(null, href + ' has ended. ' +
+            'Please reload to start a new miiting.');
         quack.play();
         finalize();
     }
@@ -561,12 +603,15 @@ function request(method, url, body, async) {
 }
 
 function addMessage(name, message) {
+    // Messages without names are regarded as system messages.
+    var headerClass = name ? 'MessageHeader' : 'SystemMessageHeader';
+    name = name || 'system';
     // Create new row in messages table.
     var row = Messages.insertRow(-1);
 
     // Create new message header cell.
     var messageHeader = document.createElement('div');
-    messageHeader.className = 'MessageHeader';
+    messageHeader.className = headerClass;
     messageHeader.textContent = name;
     var messageHeaderCell = row.insertCell(0);
     messageHeaderCell.className = 'MessageHeaderCell';
@@ -580,7 +625,9 @@ function addMessage(name, message) {
     messageTextCell.className = 'MessageTextCell';
     messageTextCell.appendChild(messageText);
 
-    // Scroll to bottom of table.
+    // Pop up message box then scroll to bottom of table.
+    messagesMinimized = true;
+    toggleMessages();
     Messages.scrollTop = Messages.scrollHeight;
 }
 

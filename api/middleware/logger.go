@@ -13,22 +13,17 @@ import (
 	"github.com/jswirl/miit/logging"
 )
 
-// blacklist is a list of request URLs that we should ignore from logging.
-var blacklist = map[string]bool{
-	"/alive": false,
-	"/ready": false,
+// ignoredPrefixes is a list of URL prefixes that we should ignore from logging.
+var ignoredPrefixes = map[string]string{
+	"/alive":    http.MethodGet,
+	"/ready":    http.MethodGet,
+	"/miitings": http.MethodPatch,
 }
 
 // Logger returns a request logger middleware, which logs the HTTP request and
 // creates a logger instance to be used throughout the execution of the request.
 func Logger() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		// Do nothing if the request URL is on the blacklist.
-		url := ctx.Request.URL.EscapedPath()
-		if _, exists := blacklist[url]; exists {
-			return
-		}
-
 		// Generate request ID and create new logger.
 		requestID := generateRequestID(ctx.Request)
 		logger, err := logging.NewLogger(requestID)
@@ -40,6 +35,14 @@ func Logger() gin.HandlerFunc {
 
 		// Inject the request logger into Gin context.
 		ctx.Set("logger", logger)
+
+		// Do nothing if the request URL is on the blacklist.
+		url := ctx.Request.URL.EscapedPath()
+		urlPrefix := getURLPrefix(url)
+		urlMethod, exists := ignoredPrefixes[urlPrefix]
+		if exists && urlMethod == ctx.Request.Method {
+			return
+		}
 
 		// Collect relevant information from this request to be logged.
 		address := ctx.ClientIP()
@@ -102,6 +105,20 @@ func GetLogger(ctx *gin.Context) *logging.Logger {
 	return logger
 }
 
+// getURLPrefix extracts the first path component of the request URL.
+func getURLPrefix(url string) string {
+	// Find the second '/' in the URL.
+	for idx, character := range url {
+		if character == '/' && idx > 0 {
+			return string(url[:idx])
+		}
+	}
+
+	// Return original URL string if we reach the end of the string.
+	return url
+}
+
+// generateRequestID generates a request ID for all logs of this request.
 func generateRequestID(request *http.Request) string {
 	// Generate hash object.
 	hash := fnv.New64a()

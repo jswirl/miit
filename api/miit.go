@@ -28,6 +28,7 @@ type miiting struct {
 	tokens     map[string]time.Time `json:"-"`
 	offerChan  chan interface{}     `json:"-"`
 	answerChan chan interface{}     `json:"-"`
+	deleteChan chan bool            `json:"-"`
 }
 
 // sessionDescription is the model of a offer/answer session description.
@@ -43,8 +44,10 @@ type iceCandidate struct {
 	SdpMLineIndex uint   `json:"sdpMLineIndex"`
 }
 
-// miitings contains all current miitings.
+// miitings contains all current miitings. miitingsMutex is used to
+// synchronize deletion of a miiting between multiple goroutines.
 var miitings sync.Map
+var miitingsMutex sync.Mutex
 
 // Parameter error type to signal parameter extraction failed.
 var errParameterExtractionFailed = errors.New("parameter extraction failed")
@@ -202,6 +205,7 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 		storedMiiting.tokens[token] = time.Now()
 		storedMiiting.offerChan = make(chan interface{}, 1)
 		storedMiiting.answerChan = make(chan interface{}, 1)
+		storedMiiting.deleteChan = make(chan bool, 2)
 		storedMiiting.ctx, storedMiiting.cancel =
 			context.WithCancel(global.Context)
 		go miitingMonitor(storedMiiting)
@@ -259,7 +263,8 @@ func DeleteMiiting(ctx *gin.Context) {
 		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
 			"Unauthorized token: [%s]", token)
 	} else {
-		deleteMiiting(miiting.id)
+		// Notify monitor to delete miiting.
+		miiting.deleteChan <- true
 		ctx.JSON(http.StatusOK, gin.H{})
 	}
 }
@@ -290,7 +295,7 @@ func ReceiveDescription(ctx *gin.Context) {
 	case data := <-sdpChan:
 		sdp, _ = data.(*sessionDescription)
 	case <-time.After(sdpWaitTimeout):
-	case <-global.Context.Done():
+	case <-miiting.ctx.Done():
 	}
 
 	// Respond with error code if waiting for the description has timed out.
@@ -368,7 +373,7 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	case data := <-iceCandidatesChan:
 		iceCandidates, _ = data.([]*iceCandidate)
 	case <-time.After(sdpWaitTimeout):
-	case <-global.Context.Done():
+	case <-miiting.ctx.Done():
 	}
 
 	// Respond with error code if waiting for ICE candidates has timed out.
@@ -479,7 +484,7 @@ func miitingMonitor(miiting *miiting) {
 		elapsed := time.Since(miiting.timestamp).Nanoseconds()
 		if elapsed > keepAliveTimeoutNanoseconds {
 			logging.Info("miiting [%s] has timed-out", miitingID)
-			deleteMiiting(miitingID)
+			deleteMiiting(miiting)
 			return
 		}
 
@@ -489,36 +494,29 @@ func miitingMonitor(miiting *miiting) {
 			if elapsed > keepAliveTimeoutNanoseconds {
 				logging.Info("Token [%s] of [%s] has timed-out",
 					token, miitingID)
-				deleteMiiting(miitingID)
+				deleteMiiting(miiting)
 				return
 			}
 		}
 
 		// Sleep until next invalidation check.
 		select {
-		case <-time.After(keepAliveTimeout):
 		case <-miiting.ctx.Done():
+		case <-time.After(keepAliveTimeout):
+		case <-miiting.deleteChan:
+			deleteMiiting(miiting)
+			return
 		}
 	}
 }
 
 // deleteMiiting removes the miiting from the miitings map.
-func deleteMiiting(miitingID string) {
-	// Lookup the requested miiting.
-	value, exists := miitings.Load(miitingID)
-	if !exists {
-		return
-	}
-
-	// Convert to miiting and perform deletion / close / etc.
-	if miiting, ok := value.(*miiting); ok {
-		miiting.once.Do(func() {
-			defer miitings.Delete(miitingID)
-			defer miiting.cancel()
-			close(miiting.offerChan)
-			close(miiting.answerChan)
-		})
-	}
+func deleteMiiting(miiting *miiting) {
+	logging.Info("Deleting miiting [%s]...", miiting.id)
+	defer miitings.Delete(miiting.id)
+	defer miiting.cancel()
+	close(miiting.offerChan)
+	close(miiting.answerChan)
 }
 
 // Check if the provided token is in our miiting tokens;
