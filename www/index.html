@@ -47,7 +47,7 @@
                 position: absolute; top: 0; left: 0; padding: 1; z-index: 1;
             }
             #RemoteName {
-                color: black; background: darkgrey; opacity: 0.5;
+                color: black; background: darkgrey; opacity: 0.5; visibility: hidden;
                 font-family: 'Courier New', Courier; font-size: 16; font-weight: bold;
                 position: absolute; top: 0; left: 0; padding: 3; z-index: 1;
             }
@@ -88,15 +88,29 @@
                 width: 640; height: 20; margin: 0; padding: 0; z-index: 1;
                 position: relative; top: -1; bottom: 0; left: 0; right: 0;
             }
-            #MessageBarText {
+            .MessageBarInputText {
                 color: darkgrey; background: black; border-width: 0;
-                text-align: left; vertical-align: middle; line-height: 220%;
-                width: 480; margin: 2; padding: 1; outline: none;
+                text-align: left; vertical-align: middle;
+                width: 475; height: 16; margin: 2; padding: 1; outline: none;
                 font-family: 'Courier New', Courier, Monospace; font-size: 10;
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
             }
+            .MessageBarInputFile {
+                color: black; background: darkgrey; border-width: 0;
+                text-align: left; vertical-align: middle;
+                width: 475; height: 16; margin: 2; padding: 1; outline: none;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
+                position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            }
+            #ClearFileSelectionButton {
+                visibility: hidden;
+                text-align: left; vertical-align: middle;
+                color: black; background: transparent; border-width: 0;
+                width: 20; height: 20; margin: 0; padding: 0; outline: none;
+                position: absolute; top: 0; bottom: 0; left: 465; right: 0;
+            }
             #ToggleMessagesButton {
-                color: darkgrey; background: black;
+                color: #404040; background: black;
                 border-width: 1; border-color: #404040; border-style: solid;
                 text-align: center; vertical-align: middle;
                 width: 21; margin: 0; padding: 0; outline: none;
@@ -112,9 +126,9 @@
                 position: absolute; top: -1; bottom: -1; left: 499; right: 0;
             }
             #MessageBarButton {
-                color: darkgrey; background: black; border-width: 0;
+                color: #404040; background: black; border-width: 0;
                 width: 80; margin: 0; padding: 0; outline: none;
-                font-family: 'Courier New', Courier; font-size: 10;
+                font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
                 position: absolute; top: -1; bottom: -1; left: 560; right: 0;
             }
         </style>
@@ -135,8 +149,9 @@
                 </div>
             </div>
             <div id='MessageBarContainer'>
-                <input type='text' id='MessageBarText'>
-                <button type='button' id='ToggleMessagesButton' onclick='toggleMessages()'>▁ </button>
+                <input type='text' id='MessageBarInput' class='MessageBarInputText'>
+                <button type='button' id='ClearFileSelectionButton' onclick='clearFileSelection()'>✕</button>
+                <button type='button' id='ToggleMessagesButton' onclick='toggleMessages()'>▼</button>
                 <label for='MessageBarFile' id='MessageBarFileLabel'> ... </label>
                 <input type='file' id='MessageBarFile'>
                 <button type='button' id='MessageBarButton'> Send </button>

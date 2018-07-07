@@ -24,7 +24,8 @@ var isInitiator = true;
 /* WebRTC variables & HTML components */
 var rtcPeerConnection, messageChannel, fileChannel;
 var LocalVideo, LocalName, RemoteVideo, RemoteName;
-var ToggleMessagesButton, Messages, MessageBarText, MessageBarButton;
+var ToggleMessagesButton, Messages, MessageBarInput;
+var MessageBarFile, MessageBarButton, ClearFileSelectionButton;
 var localIceCandidates = [];
 var quack;
 
@@ -55,8 +56,10 @@ var videoSettings = {
 }
 
 function main() {
-    // Prompt user for name.
-    localName = prompt('Please enter your name:', localName);
+    // Prompt user for name and save to cookies.
+    var cookieName = getCookie(miitingID + '.username');
+    localName = prompt('Please enter your name:', cookieName);
+    document.cookie = miitingID + '.username=' + localName;
 
     // Initialize browser Media API & DOM elements.
     initialize();
@@ -82,13 +85,16 @@ function initialize() {
     ToggleMessagesButton = document.getElementById('ToggleMessagesButton');
     MessagesContainer = document.getElementById('MessagesContainer');
     Messages = document.getElementById('Messages');
-    MessageBarText = document.getElementById('MessageBarText');
-    MessageBarButton= document.getElementById('MessageBarButton');
+    MessageBarInput = document.getElementById('MessageBarInput');
+    MessageBarFile = document.getElementById('MessageBarFile');
+    MessageBarButton = document.getElementById('MessageBarButton');
+    ClearFileSelectionButton = document.getElementById('ClearFileSelectionButton');
 
     // Initialize HTML element state & handlers.
     RemoteName.style.visibility = 'hidden';
     Messages.scrollTop = Messages.scrollHeight;
-    MessageBarText.addEventListener('keypress', handleMessageBarTextKey);
+    MessageBarInput.addEventListener('keypress', handleMessageBarInputKey);
+    MessageBarFile.addEventListener('change', handleFileSelected);
     MessageBarButton.addEventListener('click', sendMessageAndData);
 
     // Load notification sounds.
@@ -382,7 +388,7 @@ function adjustMediaCodecPriority(description) {
 
 function setLocalDescription(description) {
     console.log('Setting local description: ');
-    console.log(description);
+    console.log(description.sdp);
     return rtcPeerConnection.setLocalDescription(description);
 }
 
@@ -536,7 +542,7 @@ function handleDataChannelConnected(event) {
     }
 }
 
-function handleMessageBarTextKey(event) {
+function handleMessageBarInputKey(event) {
     if (event.keyCode == 13) {
         sendMessageAndData();
     }
@@ -545,10 +551,10 @@ function handleMessageBarTextKey(event) {
 function sendMessageAndData() {
     MessageBarButton.blur();
     if (messageChannel && messageChannel.readyState == 'open'
-        && MessageBarText.value.length > 0) {
-        addMessage(localName, MessageBarText.value);
-        messageChannel.send(MessageBarText.value);
-        MessageBarText.value = '';
+        && MessageBarInput.value.length > 0) {
+        addMessage(localName, MessageBarInput.value);
+        messageChannel.send(MessageBarInput.value);
+        MessageBarInput.value = '';
     }
 }
 
@@ -632,12 +638,20 @@ function addMessage(name, message) {
 }
 
 function generateToken() {
-    var token = "";
-    var runes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    var token = '';
+    var runes = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     for (var i = 0; i < 16; i++) {
         token += runes.charAt(Math.floor(Math.random() * runes.length));
     }
     return token;
+}
+
+function getCookie(key) {
+    var value = '; ' + document.cookie;
+    var parts = value.split('; ' + key + '=');
+    if (parts.length >= 2)
+        return parts.pop().split(';').shift();
+    return '';
 }
 
 function localSDPType() {
@@ -666,7 +680,7 @@ function showError(object) {
     }
 }
 
-/* Below is UI-related handling */
+/* Below is UI and file transfer related handling code */
 
 /* The state of our messages box */
 var messagesMinimized = false;
@@ -676,13 +690,29 @@ function toggleMessages() {
     messagesMinimized = !messagesMinimized;
     if (messagesMinimized) {
         MessagesContainer.className = 'MessagesContainerMinimized';
-        ToggleMessagesButton.textContent = '█';
+        ToggleMessagesButton.textContent = '▲';
     } else {
         MessagesContainer.className = 'MessagesContainer';
-        ToggleMessagesButton.textContent = '▁';
+        ToggleMessagesButton.textContent = '▼';
     }
 
     // Scroll to the newest bottom messages, clear focus.
     Messages.scrollTop = Messages.scrollHeight;
     ToggleMessagesButton.blur();
+}
+
+function handleFileSelected() {
+    MessageBarInput.className = 'MessageBarInputFile';
+    MessageBarInput.value = 'File: ' + MessageBarFile.files[0].name + ' (' +
+        (MessageBarFile.files[0].size / 1024.0).toFixed(2) + ' KiB)';
+    MessageBarInput.readOnly = true;
+    ClearFileSelectionButton.style.visibility = 'visible';
+}
+
+function clearFileSelection() {
+    MessageBarFile.files = null;
+    MessageBarInput.className = 'MessageBarInputText';
+    MessageBarInput.value = '';
+    MessageBarInput.readOnly = false;
+    ClearFileSelectionButton.style.visibility = 'hidden';
 }
