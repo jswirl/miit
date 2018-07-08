@@ -550,11 +550,19 @@ function handleMessageBarInputKey(event) {
 
 function sendMessageAndData() {
     MessageBarButton.blur();
-    if (messageChannel && messageChannel.readyState == 'open'
-        && MessageBarInput.value.length > 0) {
+    if (fileChannel && fileChannel.readyState == 'open' &&
+        MessageBarFile.files.length > 0) {
+        // TODO: send file notification
+        clearFileSelection();
+        return;
+    }
+
+    if (messageChannel && messageChannel.readyState == 'open' &&
+        MessageBarInput.value.length > 0) {
         addMessage(localName, MessageBarInput.value);
         messageChannel.send(MessageBarInput.value);
         MessageBarInput.value = '';
+        return;
     }
 }
 
@@ -710,7 +718,7 @@ function handleFileSelected() {
 }
 
 function clearFileSelection() {
-    MessageBarFile.files = null;
+    MessageBarFile.value = '';
     MessageBarInput.className = 'MessageBarInputText';
     MessageBarInput.value = '';
     MessageBarInput.readOnly = false;
