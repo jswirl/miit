@@ -15,8 +15,14 @@ var remoteName = 'anonymous';
 var token = generateToken();
 
 /* Keep-alive task handle and send interval in milliseconds */
+const KEEP_ALIVE_INTERVAL = 10000;
 var keepAliveHandle;
-var keepAliveInterval = 10000;
+
+/* Size of a chunk of a file */
+const CHUNK_SIZE = 1200;
+
+/* File sequence number to track the number of files we've sent.*/
+var fileCount = 0;
 
 /* Our role in the miiting session. */
 var isInitiator = true;
@@ -26,14 +32,14 @@ var rtcPeerConnection, messageChannel, fileChannel;
 var LocalVideo, LocalName, RemoteVideo, RemoteName;
 var ToggleMessagesButton, Messages, MessageBarInput;
 var MessageBarFile, MessageBarButton, ClearFileSelectionButton;
+var sendFileTransfers = {}, receiveFileTransfers = {}, quack;
 var localIceCandidates = [];
-var quack;
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
     iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun.xten.com' },
+        { 'urls': 'stun:stun.l.google.com:19302' },
+        { 'urls': 'stun:stun.xten.com' },
         // { urls: 'stun:stunserver.org' },
         // { urls: 'stun:stun.services.mozilla.com' },
     ],
@@ -50,9 +56,9 @@ var preferredVideoCodec = 'H264';
 
 /* Video settings */
 var videoSettings = {
-    width: { min: 160, ideal: 320, max: 640 },
-    height: { min: 120, ideal: 240, max: 480 },
-    frameRate: { min: 5, ideal: 30, max: 30 }
+    'width': { 'min': 160, 'ideal': 320, 'max': 640 },
+    'height': { 'min': 120, 'ideal': 240, 'max': 480 },
+    'frameRate': { 'min': 5, 'ideal': 30, 'max': 30 }
 }
 
 function main() {
@@ -91,6 +97,7 @@ function initialize() {
     ClearFileSelectionButton = document.getElementById('ClearFileSelectionButton');
 
     // Initialize HTML element state & handlers.
+    window.addEventListener('keypress', handleWindowKeyPress);
     RemoteName.style.visibility = 'hidden';
     Messages.scrollTop = Messages.scrollHeight;
     MessageBarInput.addEventListener('keypress', handleMessageBarInputKey);
@@ -237,7 +244,7 @@ function determineMiitingRole(xhr) {
 }
 
 function beginKeepAlive() {
-    keepAliveHandle = setInterval(sendKeepAliveRequest, keepAliveInterval);
+    keepAliveHandle = setInterval(sendKeepAliveRequest, KEEP_ALIVE_INTERVAL);
 }
 
 function sendKeepAliveRequest() {
@@ -273,14 +280,12 @@ function setupDataChannels() {
     } else {
         // Setup datachannel for messaging.
         messageChannel = rtcPeerConnection.createDataChannel('message');
-        console.log(messageChannel);
-        messageChannel.onmessage = event =>
-            addMessage(remoteName, event.data);
+        messageChannel.onmessage = handleMessageChannelJSON;
+
         // Setup datachannel for file transfesr.
         fileChannel = rtcPeerConnection.createDataChannel('file');
-        console.log(fileChannel);
-        fileChannel.onmessage = event =>
-            addMessage(remoteName, event.data);
+        fileChannel.binaryType = 'arraybuffer';
+        fileChannel.onmessage = handleFileChannelChunk;
     }
 }
 
@@ -299,13 +304,13 @@ function setMediaDeviceConstraints(devices) {
 
     // Compose constraints based on available media devices.
     constraints = {
-        audio: microphones.length > 0,
-        video: cameras.length > 0 ? videoSettings : false,
-        optional: {
-            DtlsSrtpKeyAgreement: true,
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: true,
-            voiceActivityDetection: false,
+        'audio': microphones.length > 0,
+        'video': cameras.length > 0 ? videoSettings : false,
+        'optional': {
+            'DtlsSrtpKeyAgreement': true,
+            'offerToReceiveAudio': true,
+            'offerToReceiveVideo': true,
+            'voiceActivityDetection': false,
         },
     };
 
@@ -410,7 +415,8 @@ function requestRemoteDescription() {
     console.log('Requesting remote description...');
 
     // Show that we are now waiting for the other end to join.
-    addMessage(null, 'Waiting for peer to join...');
+    addMessage(null, makeMessageTextDiv(
+        'Waiting for peer to join...'));
 
     return request('GET', apiUrl + '/' + remoteSDPType() + '?token=' + token,
         null, true);
@@ -428,8 +434,10 @@ function receiveRemoteDescription(xhr) {
 
     // Set the remote peer name.
     remoteName = json.name;
-    addMessage(null, '\"' + remoteName + '\" joined.');
-    addMessage(null, 'Connecting with \"' + remoteName + '\"...');
+    addMessage(null, makeMessageTextDiv(
+        '\"' + remoteName + '\" joined.'));
+    addMessage(null, makeMessageTextDiv(
+        'Connecting with \"' + remoteName + '\"...'));
     quack.play();
 
     return new RTCSessionDescription(jsep);
@@ -474,7 +482,8 @@ function setRemoteIceCandidates(iceCandidates) {
     console.log(iceCandidates);
     RemoteName.textContent = remoteName;
     RemoteName.style.visibility = 'visible';
-    addMessage(null, 'Connected with \"' + remoteName + '\".');
+    addMessage(null, makeMessageTextDiv(
+        'Connected with \"' + remoteName + '\".'));
     iceCandidates.forEach(iceCandidate =>
         rtcPeerConnection.addIceCandidate(iceCandidate).
         catch(errorHandler));
@@ -530,16 +539,33 @@ function handleDataChannelConnected(event) {
     if (event.channel.label == 'message') {
         // Setup data channel handlers for messaging.
         messageChannel = event.channel;
-        messageChannel.onmessage = function(event) {
-            addMessage(RemoteName.textContent, event.data);
-        }
+        messageChannel.onmessage = handleMessageChannelJSON;
     } else if (event.channel.label == 'file') {
         // Setup data channel handlers for file transfer.
         fileChannel = event.channel;
-        fileChannel.onmessage = function(event) {
-            addMessage(RemoteName.textContent, event.data);
+        fileChannel.onmessage = handleFileChannelChunk;
+    }
+}
+
+function handleMessageChannelJSON(event) {
+    json = JSON.parse(event.data);
+    if (json.type == 'message') {
+        addMessage(remoteName, makeMessageTextDiv(json.payload));
+    } else if (json.type == 'fileinfo') {
+        addMessage(null, makeFileTransferPromptDiv(json.payload));
+        quack.play();
+    } else if (json.type == 'filetransfer') {
+        var response = json.payload;
+        if (response.accepted) {
+            handleFileTransferAccepted(response.filename);
+        } else {
+            handleFileTransferDeclined(response.filename);
         }
     }
+}
+
+function handleWindowKeyPress(event) {
+    MessageBarInput.focus();
 }
 
 function handleMessageBarInputKey(event) {
@@ -552,15 +578,36 @@ function sendMessageAndData() {
     MessageBarButton.blur();
     if (fileChannel && fileChannel.readyState == 'open' &&
         MessageBarFile.files.length > 0) {
-        // TODO: send file notification
+        var file = MessageBarFile.files[0];
+        var filenumber = fileCount++;
+        var json = JSON.stringify({
+            type: 'fileinfo',
+            payload: {
+                'filenumber': filenumber,
+                'filename': file.name,
+                'filesize': file.size,
+            },
+        });
+        sendFileTransfers[file.name] = {
+            'file': file,
+            'reader': new FileReader(),
+            'filenumber': filenumber,
+            'chunkCount': 0,
+        };
+        showFileTransferMessage('Prompting ' + remoteName +
+            ' for file transfer of ', file.name, '...');
+        messageChannel.send(json);
         clearFileSelection();
         return;
     }
 
     if (messageChannel && messageChannel.readyState == 'open' &&
         MessageBarInput.value.length > 0) {
-        addMessage(localName, MessageBarInput.value);
-        messageChannel.send(MessageBarInput.value);
+        addMessage(localName, makeMessageTextDiv(
+            MessageBarInput.value));
+        var json = JSON.stringify({type: 'message',
+            payload: MessageBarInput.value});
+        messageChannel.send(json);
         MessageBarInput.value = '';
         return;
     }
@@ -571,8 +618,8 @@ function teardown() {
     deleteMiiting();
     if (rtcPeerConnection) {
         RemoteName.style.visibility = 'hidden';
-        addMessage(null, href + ' has ended. ' +
-            'Please reload to start a new miiting.');
+        addMessage(null, makeMessageTextDiv(
+            href + ' has ended. Please reload to start a new miiting.'));
         quack.play();
         finalize();
     }
@@ -616,28 +663,28 @@ function request(method, url, body, async) {
     });
 }
 
-function addMessage(name, message) {
+function addMessage(name, element) {
     // Messages without names are regarded as system messages.
     var headerClass = name ? 'MessageHeader' : 'SystemMessageHeader';
     name = name || 'system';
+
     // Create new row in messages table.
     var row = Messages.insertRow(-1);
 
-    // Create new message header cell.
+    // Create message header div.
     var messageHeader = document.createElement('div');
     messageHeader.className = headerClass;
     messageHeader.textContent = name;
+    
+    // Create new message header cell.
     var messageHeaderCell = row.insertCell(0);
     messageHeaderCell.className = 'MessageHeaderCell';
     messageHeaderCell.appendChild(messageHeader);
 
     // Create new message text cell.
-    var messageText = document.createElement('div');
-    messageText.className = 'MessageText';
-    messageText.textContent = message;
-    var messageTextCell = row.insertCell(1);
-    messageTextCell.className = 'MessageTextCell';
-    messageTextCell.appendChild(messageText);
+    var messageContentCell = row.insertCell(1);
+    messageContentCell.className = 'MessageContentCell';
+    messageContentCell.appendChild(element);
 
     // Pop up message box then scroll to bottom of table.
     messagesMinimized = true;
@@ -693,6 +740,48 @@ function showError(object) {
 /* The state of our messages box */
 var messagesMinimized = false;
 
+function makeMessageTextDiv(message) {
+    var messageTextDiv = document.createElement('div');
+    messageTextDiv.className = 'MessageText';
+    messageTextDiv.textContent = message;
+    return messageTextDiv;
+}
+
+function makeFileTransferPromptDiv(fileinfo) {
+    var accept = document.createElement('span');
+    accept.className = 'FileTransferLink';
+    accept.textContent = 'Accept';
+    accept.setAttribute('filenumber', fileinfo.filenumber);
+    accept.setAttribute('filename', fileinfo.filename);
+    accept.setAttribute('filesize', fileinfo.filesize);
+    accept.addEventListener('click', acceptFileTransfer);
+
+    var decline = document.createElement('span');
+    decline.className = 'FileTransferLink';
+    decline.textContent = 'Decline';
+    decline.setAttribute('filenumber', fileinfo.filenumber);
+    decline.setAttribute('filename', fileinfo.filename);
+    decline.setAttribute('filesize', fileinfo.filesize);
+    decline.addEventListener('click', declineFileTransfer);
+
+    var filename = document.createElement('b');
+    filename.textContent = fileinfo.filename;
+
+    var fileTransferPromptDiv = document.createElement('div');
+    fileTransferPromptDiv.className = 'MessageText';
+    fileTransferPromptDiv.appendChild(document.createTextNode(
+        remoteName + ' wants to send you '));
+    fileTransferPromptDiv.appendChild(filename);
+    fileTransferPromptDiv.appendChild(document.createTextNode(
+        ' (' + (fileinfo.filesize / 1024.0).toFixed(2) + ' KiB), '));
+    fileTransferPromptDiv.appendChild(accept);
+    fileTransferPromptDiv.appendChild(document.createTextNode(' or '));
+    fileTransferPromptDiv.appendChild(decline);
+    fileTransferPromptDiv.appendChild(document.createTextNode('?'));
+
+    return fileTransferPromptDiv ;
+}
+
 /* Toggle the maximized / minimized state of the message box. */
 function toggleMessages() {
     messagesMinimized = !messagesMinimized;
@@ -715,12 +804,130 @@ function handleFileSelected() {
         (MessageBarFile.files[0].size / 1024.0).toFixed(2) + ' KiB)';
     MessageBarInput.readOnly = true;
     ClearFileSelectionButton.style.visibility = 'visible';
-}
-
+} 
 function clearFileSelection() {
     MessageBarFile.value = '';
     MessageBarInput.className = 'MessageBarInputText';
     MessageBarInput.value = '';
     MessageBarInput.readOnly = false;
     ClearFileSelectionButton.style.visibility = 'hidden';
+}
+
+function showFileTransferMessage(message, filename, trailing) {
+    var filenameNode = document.createElement('b');
+    filenameNode.textContent = filename;
+    var fileTransferMessageDiv = document.createElement('div');
+    fileTransferMessageDiv.className = 'MessageText';
+    fileTransferMessageDiv.appendChild(document.createTextNode(message));
+    fileTransferMessageDiv.appendChild(filenameNode);
+    fileTransferMessageDiv.appendChild(document.createTextNode(trailing));
+    addMessage(null, fileTransferMessageDiv);
+}
+
+function acceptFileTransfer(event) {
+    // Create bold filename element.
+    var filename = document.createElement('b');
+    filename.textContent = event.target.getAttribute('filename');
+
+    // Clear parent node content.
+    var parentNode = event.target.parentNode;
+    while (parentNode.lastChild) {
+        parentNode.removeChild(parentNode.lastChild);
+    }
+
+    // Set file transfer accept message.
+    parentNode.appendChild(document.createTextNode(
+        'Accepted file transfer of '));
+    parentNode.appendChild(filename);
+    parentNode.appendChild(document.createTextNode('.'));
+
+    // Setup file transfer context for receiving.
+    var filenumber = event.target.getAttribute('filenumber');
+    receiveFileTransfers[filenumber] = {
+        'filename': event.target.getAttribute('filename'),
+        'filesize': event.target.getAttribute('filesize'),
+        'chunks': [],
+    };
+
+    // Send file transfer accept message.
+    messageChannel.send(JSON.stringify({
+        'type': 'filetransfer',
+        'payload': {
+            'accepted': true,
+            'filename': filename.textContent,
+        },
+    }));
+}
+
+function declineFileTransfer(event) {
+    // Create bold filename element.
+    var filename = document.createElement('b');
+    filename.textContent = event.target.getAttribute('filename');
+
+    // Clear parent node content.
+    var parentNode = event.target.parentNode;
+    while (parentNode.lastChild) {
+        parentNode.removeChild(parentNode.lastChild);
+    }
+
+    // Set file transfer decline message.
+    parentNode.appendChild(document.createTextNode(
+        'Declined file transfer of '));
+    parentNode.appendChild(filename);
+    parentNode.appendChild(document.createTextNode('.'));
+
+    // Send file transfer decline message.
+    messageChannel.send(JSON.stringify({
+        'type': 'filetransfer',
+        'payload': {
+            'accepted': false,
+            'filename': filename.textContent,
+        },
+    }));
+}
+
+function handleFileTransferAccepted(filename) {
+    var fileTransfer = sendFileTransfers[filename];
+    fileTransfer['reader'].onload = handleFileReaderChunk;
+    fileTransfer['reader'].fileTransfer = fileTransfer;
+    showFileTransferMessage(remoteName +
+        ' accepted file transfer of ',
+        filename, ', begin sending data...');
+    readFileChunk(filename);
+}
+
+function handleFileTransferDeclined(filename) {
+    showFileTransferMessage(remoteName +
+        ' declined file transfer of ', filename, '.');
+    delete sendFileTransfers[filename]['file'];
+    delete sendFileTransfers[filename]['reader'];
+    delete sendFileTransfers[filename];
+}
+
+function readFileChunk(filename) {
+    var fileTransfer = sendFileTransfers[filename];
+    var chunkStart = fileTransfer['chunkCount'] * CHUNK_SIZE;
+    var chunkEnd = Math.min(fileTransfer['file'].size,
+        chunkStart + CHUNK_SIZE);
+    fileTransfer['reader'].readAsArrayBuffer(
+        fileTransfer['file'].slice(chunkStart, chunkEnd));
+}
+
+function handleFileReaderChunk(event) {
+    var fileTransfer = event.target.fileTransfer;
+    var chunk = event.target.result;
+    var buffer = new ArrayBuffer(chunk.byteLength + 5);
+    var filenumber = new DataView(buffer, chunk.byteLength, 1);
+    var chunkNumber = new DataView(buffer, chunk.byteLength + 1, 4);
+
+    new Uint8Array(buffer).set(chunk);
+    filenumber.setUint8(0, fileTransfer['filenumber']);
+    chunkNumber.setUint32(0, fileTransfer['chunkCount']);
+    fileTransfer['chunkCount']++;
+
+    fileChannel.send(buffer);
+}
+
+function handleFileChannelChunk(event) {
+    console.log(event.data);
 }
