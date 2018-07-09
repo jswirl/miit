@@ -28,7 +28,7 @@
             .MessagesContainer {
                 background: transparent; overflow: hidden; opacity: 1;
                 border-width: 1; border-color: #404040; border-style: solid;
-                width: 480; height: 120; margin: auto; padding: 0;
+                width: 480; height: 120; margin: auto; padding: 0; display: block;
                 position: absolute; bottom: -1; left: -1; z-index: 1;
             }
             .MessagesContainerMinimized { visibility: hidden; }
@@ -55,14 +55,14 @@
                 background: black; opacity: 0.5; margin: 0; padding: 0;
                 border-width: 0; border-spacing: 1; border-collapse: collapse;
                 position: absolute; top: 0; bottom: 0; left: 0; right: 0;
-                overflow-x: hidden; overflow-y: auto; display: inline-block;
+                overflow-x: hidden; overflow-y: auto; display: block;
             }
             .MessageHeaderCell {
-                text-align: center; vertical-align: top;
+                text-align: center; vertical-align: top; white-space: nowrap;
                 width: 0; height: 100%; margin: 0; padding: 1;
             }
             .MessageHeader {
-                text-align: center; vertical-align: top; padding: 1;
+                text-align: center; vertical-align: top; padding: 1; white-space: nowrap;
                 background: darkgrey; color: black; margin: 0; z-index: 1;
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
             }
@@ -72,12 +72,19 @@
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
             }
             .MessageContentCell {
-                text-align: left; vertical-align: top; display: inline-block;
+                text-align: left; vertical-align: top; display: block;
                 width: 100%; height: 100%; margin: 0; padding: 1;
+                top: 0; bottom: 0; left: 0; right: 0;
             }
-            .MessageText {
+            td:last-child {
+                width: 100%;
+            }
+            tbody {
+                width: 100%;
+            }
+            .MessageContent {
                 text-align: left; vertical-align: center; line-height: 135%;
-                display: inline-block; height: 100%; padding: 1;
+                display: block; width: 100%; height: 100%; padding: 1;
                 background: black; color: white; margin: 0; z-index: 1;
                 font-family: 'Courier New', Courier, Monospace; font-size: 10;
             }
@@ -135,6 +142,24 @@
                 font-family: 'Courier New', Courier; font-size: 10;
                 text-decoration: underline; cursor: pointer;
             }
+            .FileTransferProgress {
+                text-align: left; vertical-align: center; line-height: 135%;
+                width: 100%; height: 100%; padding: 1;
+                background: black; color: white; margin: 0; z-index: 1;
+                font-family: 'Courier New', Courier, Monospace; font-size: 10;
+            }
+            .FileTransferProgressBarContainer {
+                overflow: hidden; background: black;
+                border-width: 1; border-color: white; border-style: solid;
+                height: 16; margin: 0; padding: 0;
+                position: relative; top: 0; bottom: 0; left: 0; right: 0;
+            }
+            .FileTransferProgressBar {
+                border-width: 0; color: darkgrey;
+                text-align: center; vertical-align: middle; background: white;
+                width: 0%; height: 14; margin: 0; padding: 0;
+                position: relative; top: 0; bottom: 0;
+            }
         </style>
     </head>
     <body bgcolor='black'>
@@ -149,7 +174,7 @@
                     <video id='LocalVideo' muted autoplay playsinline></video>
                 </div>
                 <div id='MessagesContainer' class='MessagesContainer'>
-                    <table id='Messages'></table>
+                    <table id='Messages' width: '100%'></table>
                 </div>
             </div>
             <div id='MessageBarContainer'>

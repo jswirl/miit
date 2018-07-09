@@ -2,7 +2,7 @@
  * For Zhe */
 
 /* API server URL */
-var href = window.location.href
+var href = window.location.href;
 var miitingID = href.split('/').pop();
 var miitingsUrl =  href.replace(miitingID, 'miitings');
 var apiUrl = miitingsUrl + '/' + miitingID;
@@ -45,7 +45,12 @@ var peerConnectionConfig = {
     ],
     bundlePolicy: 'max-compat',
     iceTransportPolicy: 'all',
-}
+};
+
+/* File transfer datachannel options. */
+var fileChannelOptions = {
+    'ordered': false,
+};
 
 /* Media constraints. */
 var constraints;
@@ -283,7 +288,8 @@ function setupDataChannels() {
         messageChannel.onmessage = handleMessageChannelJSON;
 
         // Setup datachannel for file transfesr.
-        fileChannel = rtcPeerConnection.createDataChannel('file');
+        fileChannel = rtcPeerConnection.createDataChannel(
+            'file', fileChannelOptions);
         fileChannel.binaryType = 'arraybuffer';
         fileChannel.onmessage = handleFileChannelChunk;
     }
@@ -543,6 +549,7 @@ function handleDataChannelConnected(event) {
     } else if (event.channel.label == 'file') {
         // Setup data channel handlers for file transfer.
         fileChannel = event.channel;
+        fileChannel.binaryType = 'arraybuffer';
         fileChannel.onmessage = handleFileChannelChunk;
     }
 }
@@ -579,25 +586,30 @@ function sendMessageAndData() {
     if (fileChannel && fileChannel.readyState == 'open' &&
         MessageBarFile.files.length > 0) {
         var file = MessageBarFile.files[0];
-        var filenumber = fileCount++;
+        var fileID = fileCount++;
         var json = JSON.stringify({
             type: 'fileinfo',
             payload: {
-                'filenumber': filenumber,
+                'fileid': fileID,
                 'filename': file.name,
                 'filesize': file.size,
             },
         });
+
         sendFileTransfers[file.name] = {
             'file': file,
+            'fileid': fileID,
+            'filename': file.name,
+            'filesize': file.size,
             'reader': new FileReader(),
-            'filenumber': filenumber,
-            'chunkCount': 0,
+            'chunkcount': 0,
         };
+
         showFileTransferMessage('Prompting ' + remoteName +
             ' for file transfer of ', file.name, '...');
         messageChannel.send(json);
         clearFileSelection();
+
         return;
     }
 
@@ -684,6 +696,7 @@ function addMessage(name, element) {
     // Create new message text cell.
     var messageContentCell = row.insertCell(1);
     messageContentCell.className = 'MessageContentCell';
+    messageContentCell.style.width = '100%';
     messageContentCell.appendChild(element);
 
     // Pop up message box then scroll to bottom of table.
@@ -735,14 +748,15 @@ function showError(object) {
     }
 }
 
-/* Below is UI and file transfer related handling code */
+/* Below is UI and file transfer related code, It is a mess.
+ * Clean up when you have nothing better to do with life. */
 
 /* The state of our messages box */
 var messagesMinimized = false;
 
 function makeMessageTextDiv(message) {
     var messageTextDiv = document.createElement('div');
-    messageTextDiv.className = 'MessageText';
+    messageTextDiv.className = 'MessageContent';
     messageTextDiv.textContent = message;
     return messageTextDiv;
 }
@@ -751,29 +765,29 @@ function makeFileTransferPromptDiv(fileinfo) {
     var accept = document.createElement('span');
     accept.className = 'FileTransferLink';
     accept.textContent = 'Accept';
-    accept.setAttribute('filenumber', fileinfo.filenumber);
-    accept.setAttribute('filename', fileinfo.filename);
-    accept.setAttribute('filesize', fileinfo.filesize);
+    accept.setAttribute('fileid', fileinfo['fileid']);
+    accept.setAttribute('filename', fileinfo['filename']);
+    accept.setAttribute('filesize', fileinfo['filesize']);
     accept.addEventListener('click', acceptFileTransfer);
 
     var decline = document.createElement('span');
     decline.className = 'FileTransferLink';
     decline.textContent = 'Decline';
-    decline.setAttribute('filenumber', fileinfo.filenumber);
-    decline.setAttribute('filename', fileinfo.filename);
-    decline.setAttribute('filesize', fileinfo.filesize);
+    decline.setAttribute('fileid', fileinfo['fileID']);
+    decline.setAttribute('filename', fileinfo['filename']);
+    decline.setAttribute('filesize', fileinfo['filesize']);
     decline.addEventListener('click', declineFileTransfer);
 
     var filename = document.createElement('b');
     filename.textContent = fileinfo.filename;
 
     var fileTransferPromptDiv = document.createElement('div');
-    fileTransferPromptDiv.className = 'MessageText';
+    fileTransferPromptDiv.className = 'MessageContent';
     fileTransferPromptDiv.appendChild(document.createTextNode(
         remoteName + ' wants to send you '));
     fileTransferPromptDiv.appendChild(filename);
     fileTransferPromptDiv.appendChild(document.createTextNode(
-        ' (' + (fileinfo.filesize / 1024.0).toFixed(2) + ' KiB), '));
+        ' (' + (fileinfo['filesize'] / 1024.0).toFixed(2) + ' KiB), '));
     fileTransferPromptDiv.appendChild(accept);
     fileTransferPromptDiv.appendChild(document.createTextNode(' or '));
     fileTransferPromptDiv.appendChild(decline);
@@ -817,7 +831,7 @@ function showFileTransferMessage(message, filename, trailing) {
     var filenameNode = document.createElement('b');
     filenameNode.textContent = filename;
     var fileTransferMessageDiv = document.createElement('div');
-    fileTransferMessageDiv.className = 'MessageText';
+    fileTransferMessageDiv.className = 'MessageContent';
     fileTransferMessageDiv.appendChild(document.createTextNode(message));
     fileTransferMessageDiv.appendChild(filenameNode);
     fileTransferMessageDiv.appendChild(document.createTextNode(trailing));
@@ -842,8 +856,9 @@ function acceptFileTransfer(event) {
     parentNode.appendChild(document.createTextNode('.'));
 
     // Setup file transfer context for receiving.
-    var filenumber = event.target.getAttribute('filenumber');
-    receiveFileTransfers[filenumber] = {
+    var fileID = event.target.getAttribute('fileid');
+    receiveFileTransfers[fileID] = {
+        'fileid': fileID,
         'filename': event.target.getAttribute('filename'),
         'filesize': event.target.getAttribute('filesize'),
         'chunks': [],
@@ -857,6 +872,9 @@ function acceptFileTransfer(event) {
             'filename': filename.textContent,
         },
     }));
+
+    // Show file transfer progress indication message.
+    showFileTransferProgress(receiveFileTransfers[fileID]);
 }
 
 function declineFileTransfer(event) {
@@ -893,21 +911,21 @@ function handleFileTransferAccepted(filename) {
     showFileTransferMessage(remoteName +
         ' accepted file transfer of ',
         filename, ', begin sending data...');
-    readFileChunk(filename);
+    showFileTransferProgress(fileTransfer);
+    readFileChunk(fileTransfer);
 }
 
 function handleFileTransferDeclined(filename) {
     showFileTransferMessage(remoteName +
         ' declined file transfer of ', filename, '.');
-    delete sendFileTransfers[filename]['file'];
     delete sendFileTransfers[filename]['reader'];
+    delete sendFileTransfers[filename]['file'];
     delete sendFileTransfers[filename];
 }
 
-function readFileChunk(filename) {
-    var fileTransfer = sendFileTransfers[filename];
-    var chunkStart = fileTransfer['chunkCount'] * CHUNK_SIZE;
-    var chunkEnd = Math.min(fileTransfer['file'].size,
+function readFileChunk(fileTransfer) {
+    var chunkStart = fileTransfer['chunkcount'] * CHUNK_SIZE;
+    var chunkEnd = Math.min(fileTransfer['filesize'],
         chunkStart + CHUNK_SIZE);
     fileTransfer['reader'].readAsArrayBuffer(
         fileTransfer['file'].slice(chunkStart, chunkEnd));
@@ -917,17 +935,109 @@ function handleFileReaderChunk(event) {
     var fileTransfer = event.target.fileTransfer;
     var chunk = event.target.result;
     var buffer = new ArrayBuffer(chunk.byteLength + 5);
-    var filenumber = new DataView(buffer, chunk.byteLength, 1);
-    var chunkNumber = new DataView(buffer, chunk.byteLength + 1, 4);
+    var bufferDataView = new DataView(buffer);
 
     new Uint8Array(buffer).set(chunk);
-    filenumber.setUint8(0, fileTransfer['filenumber']);
-    chunkNumber.setUint32(0, fileTransfer['chunkCount']);
-    fileTransfer['chunkCount']++;
+    bufferDataView.setUint8(chunk.byteLength,
+        fileTransfer['fileid']);
+    bufferDataView.setUint32(chunk.byteLength + 1,
+        fileTransfer['chunkcount']);
+    fileTransfer['chunkcount']++;
 
     fileChannel.send(buffer);
+    updateFileSendProgress(fileTransfer);
+
+    var filesize = fileTransfer['filesize'];
+    var totalChunks = Math.ceil(filesize / CHUNK_SIZE);
+    if (fileTransfer['chunkcount'] < totalChunks) {
+        readFileChunk(fileTransfer);
+    } else {
+        var key = fileTransfer['filename'];
+        event.target.fileTransfer = null;
+        handleFileSendCompleted(key, fileTransfer);
+    }
 }
 
 function handleFileChannelChunk(event) {
-    console.log(event.data);
+    var chunk = event.data;
+    var chunkDataView = new DataView(chunk);
+    var fileID = chunkDataView.getUint8(
+        chunkDataView.byteLength - 5);
+    var chunkSeq = chunkDataView.getUint32(
+        chunkDataView.byteLength - 4);
+    var fileTransfer = receiveFileTransfers[fileID];
+    var chunks = fileTransfer['chunks'];
+
+    var idx = chunks.length;
+    while (idx-- > 0) {
+        var chunk = chunks[idx];
+        var view = new DataView(chunk);
+        if (view.getUint32(chunk.byteLength - 4) < chunkSeq) {
+            break;
+        }
+    }
+
+    chunks.splice(idx + 1, 0, chunk);
+    updateFileReceptionProgress(fileTransfer);
+
+    var filesize = fileTransfer['filesize'];
+    var totalChunks = Math.ceil(filesize / CHUNK_SIZE);
+    if (chunks.length >= totalChunks) {
+        var key = fileTransfer['fileid'];
+        handleFileReceptionCompleted(key, fileTransfer);
+    }
+}
+
+function updateFileSendProgress(fileTransfer) {
+    var progressBar = fileTransfer['progressbar'];
+    var filesize = fileTransfer['filesize'];
+    var totalChunks = Math.ceil(filesize / CHUNK_SIZE);
+    var percentage = fileTransfer['chunkcount'] / totalChunks * 100;
+    progressBar.setProgress(percentage);
+}
+
+function updateFileReceptionProgress(fileTransfer) {
+    var progressBar = fileTransfer['progressbar'];
+    var filesize = fileTransfer['filesize'];
+    var totalChunks = Math.ceil(filesize / CHUNK_SIZE);
+    var percentage = fileTransfer['chunks'].length / totalChunks * 100;
+    progressBar.setProgress(percentage);
+}
+
+function handleFileSendCompleted(key, fileTransfer) {
+    delete sendFileTransfers[key]['reader']
+    delete sendFileTransfers[key]['file'];
+    delete sendFileTransfers[key];
+}
+
+function handleFileReceptionCompleted(key, fileTransfer) {
+    delete receiveFileTransfers[key]['chunks'];
+    delete receiveFileTransfers[key];
+}
+
+function showFileTransferProgress(fileTransfer) {
+    var fileTransferProgressDiv = document.createElement('div');
+    fileTransferProgressDiv.className = 'FileTransferProgress';
+    fileTransferProgressDiv.appendChild(document.createTextNode(
+        'File: ' + fileTransfer['filename'] + ' (' +
+        (fileTransfer['filesize'] / 1024.0).toFixed(2) + ' KiB)'));
+    var progressBarDiv = makeProgressBarDiv(fileTransfer);
+    fileTransfer['progressbar'] = progressBarDiv;
+    fileTransferProgressDiv.appendChild(progressBarDiv);
+    addMessage(null, fileTransferProgressDiv);
+}
+
+function makeProgressBarDiv(fileTransfer) {
+    var progressBar = document.createElement('div');
+    progressBar.className = 'FileTransferProgressBar';
+
+    var progressBarContainer = document.createElement('div');
+    progressBarContainer.className = 'FileTransferProgressBarContainer';
+    progressBarContainer.appendChild(progressBar);
+    progressBarContainer.setProgress = function(percentage) {
+        progressBar.textContent = percentage.toFixed(2) + ' %';
+        progressBar.style.width = percentage.toFixed(0) + '%';
+    };
+
+    return progressBarContainer;
 }
