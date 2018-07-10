@@ -680,8 +680,17 @@ function request(method, url, body, async) {
 
 function addMessage(name, element) {
     // Messages without names are regarded as system messages.
-    var headerClass = name ? 'MessageHeader' : 'SystemMessageHeader';
+    var headerClass;
     name = name || 'system';
+    if (name == localName && isInitiator ||
+        name == remoteName && !isInitiator) {
+        headerClass = 'MessageHeaderBlue';
+    } else if (name == localName && !isInitiator ||
+        name == remoteName && isInitiator) {
+        headerClass = 'MessageHeaderGreen';
+    } else {
+        headerClass = 'SystemMessageHeader';
+    }
 
     // Create new row in messages table.
     var row = Messages.insertRow(-1);

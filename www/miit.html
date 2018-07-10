@@ -61,9 +61,14 @@
                 text-align: center; vertical-align: top; white-space: nowrap;
                 width: 0; height: 100%; margin: 0; padding: 1;
             }
-            .MessageHeader {
+            .MessageHeaderBlue {
                 text-align: center; vertical-align: top; padding: 1; white-space: nowrap;
-                background: darkgrey; color: black; margin: 0; z-index: 1;
+                background: royalblue; color: black; margin: 0; z-index: 1;
+                font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
+            }
+            .MessageHeaderGreen {
+                text-align: center; vertical-align: top; padding: 1; white-space: nowrap;
+                background: seagreen; color: black; margin: 0; z-index: 1;
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
             }
             .SystemMessageHeader {
@@ -162,6 +167,13 @@
                 text-align: center; vertical-align: middle; background: white;
                 width: 0%; height: 9; margin: 1; padding: 0;
             }
+            #miit{
+                color: #404040;
+                font-family: 'Verdana', Geneva, sans-serif; font-size: 18;
+                position: absolute; margin: 0; left: 50%;
+                margin-right: -50%; transform: translate(-50%, -50%);
+                text-decoration: none; font-weight: bold;
+            }
         </style>
     </head>
     <body bgcolor='black'>
@@ -187,6 +199,8 @@
                 <input type='file' id='MessageBarFile'>
                 <button type='button' id='MessageBarButton'> Send </button>
             </div>
+            <br><br>
+            <a id='miit' href='https://miit.tw'>m<font color='royalblue'>i</font><font color='seagreen'>i</font>t</a>
         </div>
         <script type='text/javascript'> main(); </script>
     </body>

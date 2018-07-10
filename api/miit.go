@@ -54,7 +54,8 @@ var errParameterExtractionFailed = errors.New("parameter extraction failed")
 
 // miit configurations.
 var miitAssetsPath string
-var indexPagePath string
+var miitMainPagePath string
+var miitNotFoundPagePath string
 var scriptPath string
 var sdpWaitTimeout time.Duration
 var keepAliveInterval time.Duration
@@ -64,7 +65,8 @@ var keepAliveTimeoutNanoseconds int64
 func init() {
 	// Load asset configuration paths.
 	miitAssetsPath = config.GetString("MIIT_ASSETS_PATH")
-	indexPagePath = config.GetString("MIIT_INDEX_PAGE_PATH")
+	miitMainPagePath = config.GetString("MIIT_MAIN_PAGE_PATH")
+	miitNotFoundPagePath = config.GetString("MIIT_NOT_FOUND_PAGE_PATH")
 	scriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
 	sdpWaitTimeout = config.GetMilliseconds("MIIT_SDP_WAIT_TIMEOUT")
 	keepAliveInterval = config.GetMilliseconds("MIIT_KEEPALIVE_INTERVAL")
@@ -87,7 +89,8 @@ func init() {
 	miitingsGroup.POST(":miiting", SendDescription)
 	miitingsGroup.GET(":miiting/:sdp_type", ReceiveDescription)
 	miitingsGroup.POST(":miiting/:sdp_type", SendIceCandidates)
-	miitingsGroup.GET(":miiting/:sdp_type/ice_candidates", ReceiveIceCandidates)
+	miitingsGroup.GET(":miiting/:sdp_type/ice_candidates",
+		ReceiveIceCandidates)
 }
 
 // RedirectToRandomMiiting is a handler that redirects the client to a random miiting.
@@ -134,14 +137,13 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 		return
 	}
 
-	// No miiting was available, respond accordingly.
-	abortWithStatusAndMessage(ctx, http.StatusNotFound,
-		"Failed to find available miitings to join")
+	// No miiting was available, respond with not found page.
+	ctx.File(miitNotFoundPagePath)
 }
 
 // GetMiiting returns the entry page of the specific request.
 func GetMiiting(ctx *gin.Context) {
-	ctx.File(indexPagePath)
+	ctx.File(miitMainPagePath)
 }
 
 // PushMiitAssets is the handler for pushing the miit assets to clients.
@@ -163,7 +165,7 @@ func PushMiitAssets(ctx *gin.Context) {
 	}
 
 	// Push miit assets to client.
-	assets := []string{indexPagePath, scriptPath}
+	assets := []string{miitMainPagePath, miitNotFoundPagePath, scriptPath}
 	for _, asset := range assets {
 		if err := pusher.Push(asset, nil); err != nil {
 			abortWithStatusAndMessage(ctx, http.StatusInternalServerError,

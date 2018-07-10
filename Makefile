@@ -6,6 +6,7 @@ BUILD_TIME=$(shell date +%s)
 LDFLAGS = -X ${IMPORT_PATH}/global.ServiceName=${SERVICE_NAME}
 LDFLAGS += -X ${IMPORT_PATH}/global.GitCommitHash=${GIT_COMMIT_HASH}
 LDFLAGS += -X ${IMPORT_PATH}/global.BuildTime=${BUILD_TIME}
+#LDFLAGS += -s -w
 
 .PHONY: all clean
 
