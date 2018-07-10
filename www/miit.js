@@ -399,7 +399,7 @@ function adjustMediaCodecPriority(description) {
 
 function setLocalDescription(description) {
     console.log('Setting local description: ');
-    console.log(description.sdp);
+    console.log(description);
     return rtcPeerConnection.setLocalDescription(description);
 }
 
@@ -748,7 +748,7 @@ function showError(object) {
     }
 }
 
-/* Below is UI and file transfer related code, It is a mess.
+/* Below is UI and file transfer related code, It is a mess, no MVC.
  * Clean up when you have nothing better to do with life. */
 
 /* The state of our messages box */
@@ -764,7 +764,7 @@ function makeMessageTextDiv(message) {
 function makeFileTransferPromptDiv(fileinfo) {
     var accept = document.createElement('span');
     accept.className = 'FileTransferLink';
-    accept.textContent = 'Accept';
+    accept.textContent = 'accept';
     accept.setAttribute('fileid', fileinfo['fileid']);
     accept.setAttribute('filename', fileinfo['filename']);
     accept.setAttribute('filesize', fileinfo['filesize']);
@@ -772,7 +772,7 @@ function makeFileTransferPromptDiv(fileinfo) {
 
     var decline = document.createElement('span');
     decline.className = 'FileTransferLink';
-    decline.textContent = 'Decline';
+    decline.textContent = 'decline';
     decline.setAttribute('fileid', fileinfo['fileID']);
     decline.setAttribute('filename', fileinfo['filename']);
     decline.setAttribute('filesize', fileinfo['filesize']);
@@ -825,17 +825,6 @@ function clearFileSelection() {
     MessageBarInput.value = '';
     MessageBarInput.readOnly = false;
     ClearFileSelectionButton.style.visibility = 'hidden';
-}
-
-function showFileTransferMessage(message, filename, trailing) {
-    var filenameNode = document.createElement('b');
-    filenameNode.textContent = filename;
-    var fileTransferMessageDiv = document.createElement('div');
-    fileTransferMessageDiv.className = 'MessageContent';
-    fileTransferMessageDiv.appendChild(document.createTextNode(message));
-    fileTransferMessageDiv.appendChild(filenameNode);
-    fileTransferMessageDiv.appendChild(document.createTextNode(trailing));
-    addMessage(null, fileTransferMessageDiv);
 }
 
 function acceptFileTransfer(event) {
@@ -937,7 +926,7 @@ function handleFileReaderChunk(event) {
     var buffer = new ArrayBuffer(chunk.byteLength + 5);
     var bufferDataView = new DataView(buffer);
 
-    new Uint8Array(buffer).set(chunk);
+    new Uint8Array(buffer).set(new Uint8Array(chunk));
     bufferDataView.setUint8(chunk.byteLength,
         fileTransfer['fileid']);
     bufferDataView.setUint32(chunk.byteLength + 1,
@@ -959,8 +948,8 @@ function handleFileReaderChunk(event) {
 }
 
 function handleFileChannelChunk(event) {
-    var chunk = event.data;
-    var chunkDataView = new DataView(chunk);
+    var buffer = event.data;
+    var chunkDataView = new DataView(buffer);
     var fileID = chunkDataView.getUint8(
         chunkDataView.byteLength - 5);
     var chunkSeq = chunkDataView.getUint32(
@@ -977,7 +966,7 @@ function handleFileChannelChunk(event) {
         }
     }
 
-    chunks.splice(idx + 1, 0, chunk);
+    chunks.splice(idx + 1, 0, buffer);
     updateFileReceptionProgress(fileTransfer);
 
     var filesize = fileTransfer['filesize'];
@@ -1005,37 +994,102 @@ function updateFileReceptionProgress(fileTransfer) {
 }
 
 function handleFileSendCompleted(key, fileTransfer) {
+    var progressBar = fileTransfer['progressbar'];
+    showFileSendCompletedMessage(fileTransfer['filename'],
+        progressBar.parentNode.parentNode);
     delete sendFileTransfers[key]['reader']
     delete sendFileTransfers[key]['file'];
     delete sendFileTransfers[key];
 }
 
 function handleFileReceptionCompleted(key, fileTransfer) {
+    var chunks = fileTransfer['chunks'];
+    for (var idx = 0; idx < chunks.length; idx++) {
+        chunks[idx] = chunks[idx].slice(0,
+            chunks[idx].byteLength - 5);
+    }
+
+    var blob = new Blob(chunks);
+    var link = document.createElement('a');
+    var progressBar = fileTransfer['progressbar'];
+    link.href = URL.createObjectURL(blob);
+    link.download = fileTransfer['filename'];
+    link.textContent = fileTransfer['filename'];
+    showFileReceptionCompletedMessage(link,
+        progressBar.parentNode.parentNode);
+
+    if (link.click) {
+        link.click();
+    } else {
+        var click = document.createEvent('MouseEvents');
+        click.initMouseEvent( 'click', true, true, window,
+            0, 0, 0, 0, 0, false, false, false, false, 0, null);
+        link.dispatchEvent(click);
+    }
+
     delete receiveFileTransfers[key]['chunks'];
     delete receiveFileTransfers[key];
 }
 
 function showFileTransferProgress(fileTransfer) {
+    var progressBarDiv = makeProgressBarDiv(fileTransfer);
+    fileTransfer['progressbar'] = progressBarDiv;
     var fileTransferProgressDiv = document.createElement('div');
     fileTransferProgressDiv.className = 'FileTransferProgress';
+    fileTransferProgressDiv.appendChild(progressBarDiv);
     fileTransferProgressDiv.appendChild(document.createTextNode(
         'File: ' + fileTransfer['filename'] + ' (' +
         (fileTransfer['filesize'] / 1024.0).toFixed(2) + ' KiB)'));
-    var progressBarDiv = makeProgressBarDiv(fileTransfer);
-    fileTransfer['progressbar'] = progressBarDiv;
-    fileTransferProgressDiv.appendChild(progressBarDiv);
     addMessage(null, fileTransferProgressDiv);
+}
+
+function showFileTransferMessage(message, filename, trailing) {
+    var filenameNode = document.createElement('b');
+    filenameNode.textContent = filename;
+    var fileTransferMessageDiv = document.createElement('div');
+    fileTransferMessageDiv.className = 'MessageContent';
+    fileTransferMessageDiv.appendChild(document.createTextNode(message));
+    fileTransferMessageDiv.appendChild(filenameNode);
+    fileTransferMessageDiv.appendChild(document.createTextNode(trailing));
+    addMessage(null, fileTransferMessageDiv);
+}
+
+function showFileSendCompletedMessage(filename, parentNode) {
+    while (parentNode.lastChild) {
+        parentNode.removeChild(parentNode.lastChild);
+    }
+    var filenameNode = document.createElement('b');
+    filenameNode.textContent = filename;
+    parentNode.className = 'MessageContent';
+    parentNode.appendChild(document.createTextNode('File transfer of '));
+    parentNode.appendChild(filenameNode);
+    parentNode.appendChild(document.createTextNode(' completed.'));
+}
+
+function showFileReceptionCompletedMessage(filelink, parentNode) {
+    while (parentNode.lastChild) {
+        parentNode.removeChild(parentNode.lastChild);
+    }
+    parentNode.className = 'MessageContent';
+    parentNode.appendChild(document.createTextNode('File transfer of '));
+    parentNode.appendChild(filelink);
+    parentNode.appendChild(document.createTextNode(
+        ' completed. Click to save file.'));
 }
 
 function makeProgressBarDiv(fileTransfer) {
     var progressBar = document.createElement('div');
     progressBar.className = 'FileTransferProgressBar';
 
+    var percentageText = document.createElement('div');
+    percentageText.className = 'FileTransferProgressPercentage';
+
     var progressBarContainer = document.createElement('div');
     progressBarContainer.className = 'FileTransferProgressBarContainer';
     progressBarContainer.appendChild(progressBar);
+    progressBarContainer.appendChild(percentageText);
     progressBarContainer.setProgress = function(percentage) {
-        progressBar.textContent = percentage.toFixed(2) + ' %';
+        percentageText.textContent = percentage.toFixed(2) + '%';
         progressBar.style.width = percentage.toFixed(0) + '%';
     };
 
