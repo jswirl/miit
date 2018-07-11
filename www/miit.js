@@ -50,8 +50,8 @@ var peerConnectionConfig = {
 /* File transfer datachannel options. */
 var fileChannelOptions = {
     'ordered': false,
-    'maxPacketLifeTime': 10000,
-    'maxRetransmits': 10,
+    // 'maxPacketLifeTime': 10000,
+    'maxRetransmits': 100,
     'negotiated': false,
 };
 
