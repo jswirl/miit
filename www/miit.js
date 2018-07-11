@@ -18,8 +18,14 @@ var token = generateToken();
 const KEEP_ALIVE_INTERVAL = 10000;
 var keepAliveHandle;
 
-/* Size of a chunk of a file */
-const CHUNK_SIZE = 1200;
+/* Size of a block / chunk of a file */
+const CHUNK_SIZE = 4096;
+const BLOCK_SIZE = 1000 * CHUNK_SIZE;
+const CHUNKS_PER_BLOCK = BLOCK_SIZE / CHUNK_SIZE;
+
+/* File datachannel buffer size & send backoff time */
+const FILECHANNEL_BUFFER_SIZE = 16 * 1024 * 1024;
+const FILECHANNEL_BACKOFF_MS = 1000;
 
 /* File sequence number to track the number of files we've sent.*/
 var fileCount = 0;
@@ -177,7 +183,7 @@ function finalize() {
 function run() {
     // Check if MediaDevices API is available.
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-        var message = "MediaDevices API not available";
+        var message = 'MediaDevices API not available';
         console.log(message);
         alert(message);
         return;
@@ -308,8 +314,8 @@ function setMediaDeviceConstraints(devices) {
     console.log(devices);
 
     // Gather audio & video devices;
-    var cameras = devices.filter(device => device.kind == "videoinput");
-    var microphones = devices.filter(device => device.kind == "audioinput");
+    var cameras = devices.filter(device => device.kind == 'videoinput');
+    var microphones = devices.filter(device => device.kind == 'audioinput');
 
     // Compose constraints based on available media devices.
     constraints = {
@@ -443,10 +449,8 @@ function receiveRemoteDescription(xhr) {
 
     // Set the remote peer name.
     remoteName = json.name;
-    addMessage(null, makeMessageTextDiv(
-        '\"' + remoteName + '\" joined.'));
-    addMessage(null, makeMessageTextDiv(
-        'Connecting with \"' + remoteName + '\"...'));
+    addMessage(null, makeMessageTextDiv(remoteName + ' joined.'));
+    addMessage(null, makeMessageTextDiv('Connecting with ' + remoteName + '...'));
     quack.play();
 
     return new RTCSessionDescription(jsep);
@@ -491,8 +495,6 @@ function setRemoteIceCandidates(iceCandidates) {
     console.log(iceCandidates);
     RemoteName.textContent = remoteName;
     RemoteName.style.visibility = 'visible';
-    addMessage(null, makeMessageTextDiv(
-        'Connected with \"' + remoteName + '\".'));
     iceCandidates.forEach(iceCandidate =>
         rtcPeerConnection.addIceCandidate(iceCandidate).
         catch(errorHandler));
@@ -527,11 +529,15 @@ function handleIceConnectionState(event) {
     // Teardown the meeting if ICE has disconnected.
     if (rtcPeerConnection) {
         switch (rtcPeerConnection.iceConnectionState) {
-            case "closed":
-            case "failed":
-            case "disconnected":
+            case 'closed':
+            case 'failed':
+            case 'disconnected':
+                addMessage(null, makeMessageTextDiv(remoteName +
+                    ' disconnected.')); break;
                 teardown();
-                break;
+            case 'connected':
+                addMessage(null, makeMessageTextDiv('Connected with ' +
+                    remoteName + '.')); break;
         }
     }
 }
@@ -604,7 +610,6 @@ function sendMessageAndData() {
             'fileid': fileID,
             'filename': file.name,
             'filesize': file.size,
-            'reader': new FileReader(),
             'chunkcount': 0,
         };
 
@@ -854,7 +859,8 @@ function acceptFileTransfer(event) {
     parentNode.appendChild(document.createTextNode(
         'Accepted file transfer of '));
     parentNode.appendChild(filename);
-    parentNode.appendChild(document.createTextNode('.'));
+    parentNode.appendChild(document.createTextNode(
+        ' from ' + remoteName + '.'));
 
     // Setup file transfer context for receiving.
     var fileID = event.target.getAttribute('fileid');
@@ -907,56 +913,72 @@ function declineFileTransfer(event) {
 
 function handleFileTransferAccepted(filename) {
     var fileTransfer = sendFileTransfers[filename];
-    fileTransfer['reader'].onload = handleFileReaderChunk;
-    fileTransfer['reader'].fileTransfer = fileTransfer;
     showFileTransferMessage(remoteName +
         ' accepted file transfer of ',
         filename, ', begin sending data...');
     showFileTransferProgress(fileTransfer);
-    readFileChunk(fileTransfer);
+    readFileBlock(fileTransfer);
 }
 
 function handleFileTransferDeclined(filename) {
     showFileTransferMessage(remoteName +
         ' declined file transfer of ', filename, '.');
-    delete sendFileTransfers[filename]['reader'];
     delete sendFileTransfers[filename]['file'];
     delete sendFileTransfers[filename];
 }
 
-function readFileChunk(fileTransfer) {
-    var chunkStart = fileTransfer['chunkcount'] * CHUNK_SIZE;
-    var chunkEnd = Math.min(fileTransfer['filesize'],
-        chunkStart + CHUNK_SIZE);
-    fileTransfer['reader'].readAsArrayBuffer(
-        fileTransfer['file'].slice(chunkStart, chunkEnd));
+function readFileBlock(fileTransfer) {
+    if (fileChannel.bufferedAmount + BLOCK_SIZE > FILECHANNEL_BUFFER_SIZE) {
+        setTimeout(readFileBlock, FILECHANNEL_BACKOFF_MS, fileTransfer);
+        return;
+    }
+
+    var blockStart = fileTransfer['chunkcount'] * CHUNK_SIZE;
+    var blockEnd = Math.min(fileTransfer['filesize'],
+        blockStart + BLOCK_SIZE);
+    var fileReader = new FileReader();
+    fileReader.onload = handleFileReaderBlock;
+    fileReader.fileTransfer = fileTransfer;
+    fileReader.readAsArrayBuffer(fileTransfer['file'].
+        slice(blockStart, blockEnd));
 }
 
-function handleFileReaderChunk(event) {
+function handleFileReaderBlock(event) {
     var fileTransfer = event.target.fileTransfer;
-    var chunk = event.target.result;
-    var buffer = new ArrayBuffer(chunk.byteLength + 5);
-    var bufferDataView = new DataView(buffer);
+    var block = event.target.result;
 
-    new Uint8Array(buffer).set(new Uint8Array(chunk));
-    bufferDataView.setUint8(chunk.byteLength,
-        fileTransfer['fileid']);
-    bufferDataView.setUint32(chunk.byteLength + 1,
-        fileTransfer['chunkcount']);
-    fileTransfer['chunkcount']++;
-
-    fileChannel.send(buffer);
-    updateFileSendProgress(fileTransfer);
+    for (var idx = 0; idx * CHUNK_SIZE < block.byteLength; idx++) {
+        var chunkOffset = idx * CHUNK_SIZE;
+        var chunkLength = Math.min(CHUNK_SIZE,
+            block.byteLength - chunkOffset);
+        var chunkArray = new Uint8Array(block, chunkOffset, chunkLength);
+        handleFileReaderChunk(fileTransfer, chunkArray);
+    }
 
     var filesize = fileTransfer['filesize'];
     var totalChunks = Math.ceil(filesize / CHUNK_SIZE);
     if (fileTransfer['chunkcount'] < totalChunks) {
-        readFileChunk(fileTransfer);
+        readFileBlock(fileTransfer);
     } else {
         var key = fileTransfer['filename'];
         event.target.fileTransfer = null;
         handleFileSendCompleted(key, fileTransfer);
     }
+}
+
+function handleFileReaderChunk(fileTransfer, chunkArray) {
+    var buffer = new ArrayBuffer(chunkArray.byteLength + 5);
+    var bufferDataView = new DataView(buffer);
+
+    new Uint8Array(buffer).set(chunkArray);
+    bufferDataView.setUint8(chunkArray.byteLength,
+        fileTransfer['fileid']);
+    bufferDataView.setUint32(chunkArray.byteLength + 1,
+        fileTransfer['chunkcount']);
+    fileTransfer['chunkcount']++;
+
+    fileChannel.send(buffer);
+    updateFileSendProgress(fileTransfer);
 }
 
 function handleFileChannelChunk(event) {
@@ -1009,7 +1031,6 @@ function handleFileSendCompleted(key, fileTransfer) {
     var progressBar = fileTransfer['progressbar'];
     showFileSendCompletedMessage(fileTransfer['filename'],
         progressBar.parentNode.parentNode);
-    delete sendFileTransfers[key]['reader']
     delete sendFileTransfers[key]['file'];
     delete sendFileTransfers[key];
 }
