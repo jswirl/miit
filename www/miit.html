@@ -42,14 +42,14 @@
                 width: 640; height: 480; margin: 0; padding: 0;
             }
             #LocalName {
-                color: black; background: darkgrey; opacity: 0.5;
+                color: black; background: darkgrey; opacity: 0.5; cursor: pointer;
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
-                position: absolute; top: 0; left: 0; padding: 1; z-index: 1;
+                position: absolute; top: 0; left: 0; padding: 1; z-index: 1; max-width: 150;
             }
             #RemoteName {
                 color: black; background: darkgrey; opacity: 0.5; visibility: hidden;
                 font-family: 'Courier New', Courier; font-size: 16; font-weight: bold;
-                position: absolute; top: 0; left: 0; padding: 3; z-index: 1;
+                position: absolute; top: 0; left: 0; padding: 3; z-index: 1; max-width: 600;
             }
             #Messages {
                 background: black; opacity: 0.5; margin: 0; padding: 0; 
@@ -59,21 +59,21 @@
             }
             .MessageHeaderCell {
                 text-align: center; vertical-align: top; white-space: nowrap;
-                width: 0; height: 100%; margin: 0; padding: 1;
+                width: 0; height: 100%; margin: 0; padding: 1; max-width: 20%
             }
             .MessageHeaderBlue {
                 text-align: center; vertical-align: top; padding: 1; white-space: nowrap;
-                background: royalblue; color: black; margin: 0; z-index: 1;
+                background: royalblue; color: black; margin: 0; z-index: 1; max-width: 100;
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
             }
             .MessageHeaderGreen {
                 text-align: center; vertical-align: top; padding: 1; white-space: nowrap;
-                background: seagreen; color: black; margin: 0; z-index: 1;
+                background: seagreen; color: black; margin: 0; z-index: 1; max-width: 100;
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
             }
             .SystemMessageHeader {
                 text-align: center; vertical-align: top; padding: 1;
-                background: white; color: black; margin: 0; z-index: 1;
+                background: white; color: black; margin: 0; z-index: 1; max-width: 100;
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
             }
             .MessageContentCell {
@@ -139,7 +139,7 @@
                 font-family: 'Courier New', Courier; font-size: 10; font-weight: bold;
                 position: absolute; top: -1; bottom: -1; left: 560; right: 0;
             }
-            .FileTransferLink {
+            .MessagePromptLink {
                 color: white; font-weight: bold;
                 font-family: 'Courier New', Courier; font-size: 10;
                 text-decoration: underline; cursor: pointer;

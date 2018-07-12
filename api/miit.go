@@ -56,7 +56,7 @@ var errParameterExtractionFailed = errors.New("parameter extraction failed")
 var miitAssetsPath string
 var miitMainPagePath string
 var miitNotFoundPagePath string
-var scriptPath string
+var miitScriptPath string
 var sdpWaitTimeout time.Duration
 var keepAliveInterval time.Duration
 var keepAliveTimeout time.Duration
@@ -67,7 +67,7 @@ func init() {
 	miitAssetsPath = config.GetString("MIIT_ASSETS_PATH")
 	miitMainPagePath = config.GetString("MIIT_MAIN_PAGE_PATH")
 	miitNotFoundPagePath = config.GetString("MIIT_NOT_FOUND_PAGE_PATH")
-	scriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
+	miitScriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
 	sdpWaitTimeout = config.GetMilliseconds("MIIT_SDP_WAIT_TIMEOUT")
 	keepAliveInterval = config.GetMilliseconds("MIIT_KEEPALIVE_INTERVAL")
 	keepAliveTimeout = config.GetMilliseconds("MIIT_KEEPALIVE_TIMEOUT")
@@ -165,7 +165,7 @@ func PushMiitAssets(ctx *gin.Context) {
 	}
 
 	// Push miit assets to client.
-	assets := []string{miitMainPagePath, miitNotFoundPagePath, scriptPath}
+	assets := []string{miitMainPagePath, miitNotFoundPagePath, miitScriptPath}
 	for _, asset := range assets {
 		if err := pusher.Push(asset, nil); err != nil {
 			abortWithStatusAndMessage(ctx, http.StatusInternalServerError,

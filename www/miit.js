@@ -18,6 +18,9 @@ var token = generateToken();
 const KEEP_ALIVE_INTERVAL = 10000;
 var keepAliveHandle;
 
+/* Page reload timeout when disconnected. */
+const PAGE_RELOAD_TIMEOUT_MS = 15 * 1000;
+
 /* Size of a block / chunk of a file */
 const CHUNK_SIZE = 4096;
 const BLOCK_SIZE = 1000 * CHUNK_SIZE;
@@ -39,7 +42,7 @@ var LocalVideo, LocalName, RemoteVideo, RemoteName;
 var ToggleMessagesButton, Messages, MessageBarInput;
 var MessageBarFile, MessageBarButton, ClearFileSelectionButton;
 var sendFileTransfers = {}, receiveFileTransfers = {}, quack;
-var localIceCandidates = [];
+var localIceCandidates = [], pageReloadID;
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
@@ -77,9 +80,11 @@ var videoSettings = {
 
 function main() {
     // Prompt user for name and save to cookies.
-    var cookieName = getCookie(miitingID + '.username');
-    localName = prompt('Please enter your name:', cookieName);
-    document.cookie = miitingID + '.username=' + localName;
+    localName = getCookie(miitingID + '.username');
+    if (localName == null || localName.length <= 0) {
+        localName = prompt('Please enter your name:', localName);
+        document.cookie = miitingID + '.username=' + localName;
+    }
 
     // Initialize browser Media API & DOM elements.
     initialize();
@@ -113,6 +118,7 @@ function initialize() {
     // Initialize HTML element state & handlers.
     window.addEventListener('keypress', handleWindowKeyPress);
     RemoteName.style.visibility = 'hidden';
+    LocalName.addEventListener('click', handleModifyLocalName);
     Messages.scrollTop = Messages.scrollHeight;
     MessageBarInput.addEventListener('keypress', handleMessageBarInputKey);
     MessageBarFile.addEventListener('change', handleFileSelected);
@@ -183,10 +189,8 @@ function finalize() {
 function run() {
     // Check if MediaDevices API is available.
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-        var message = 'MediaDevices API not available';
-        console.log(message);
-        alert(message);
-        return;
+        addMessage(null, makeMessageTextDiv(
+            'Error: MediaDevices API not available'));
     }
 
     // Branched continuation of our Promise chain based on our role.
@@ -533,8 +537,8 @@ function handleIceConnectionState(event) {
             case 'failed':
             case 'disconnected':
                 addMessage(null, makeMessageTextDiv(remoteName +
-                    ' disconnected.')); break;
-                teardown();
+                    ' disconnected.'));
+                teardown(); break;
             case 'connected':
                 addMessage(null, makeMessageTextDiv('Connected with ' +
                     remoteName + '.')); break;
@@ -565,6 +569,13 @@ function handleDataChannelConnected(event) {
 
 function handleMessageChannelJSON(event) {
     json = JSON.parse(event.data);
+    if (remoteName != json.sender) {
+        addMessage(null, makeMessageTextDiv(remoteName +
+            ' changed name to ' + json.sender + '.'));
+        remoteName = json.sender;
+        RemoteName.textContent = remoteName;
+    }
+
     if (json.type == 'message') {
         addMessage(remoteName, makeMessageTextDiv(json.payload));
     } else if (json.type == 'fileinfo') {
@@ -578,6 +589,12 @@ function handleMessageChannelJSON(event) {
             handleFileTransferDeclined(response.filename);
         }
     }
+}
+
+function handleModifyLocalName(event) {
+    localName = prompt('Please enter your name:', localName) || localName;
+    document.cookie = miitingID + '.username=' + localName;
+    LocalName.textContent = localName;
 }
 
 function handleWindowKeyPress(event) {
@@ -597,8 +614,9 @@ function sendMessageAndData() {
         var file = MessageBarFile.files[0];
         var fileID = fileCount++;
         var json = JSON.stringify({
-            type: 'fileinfo',
-            payload: {
+            'sender': localName,
+            'type': 'fileinfo',
+            'payload': {
                 'fileid': fileID,
                 'filename': file.name,
                 'filesize': file.size,
@@ -625,8 +643,11 @@ function sendMessageAndData() {
         MessageBarInput.value.length > 0) {
         addMessage(localName, makeMessageTextDiv(
             MessageBarInput.value));
-        var json = JSON.stringify({type: 'message',
-            payload: MessageBarInput.value});
+        var json = JSON.stringify({
+            'sender': localName,
+            'type': 'message',
+            'payload': MessageBarInput.value
+        });
         messageChannel.send(json);
         MessageBarInput.value = '';
         return;
@@ -638,11 +659,33 @@ function teardown() {
     deleteMiiting();
     if (rtcPeerConnection) {
         RemoteName.style.visibility = 'hidden';
-        addMessage(null, makeMessageTextDiv(
-            href + ' has ended. Please reload to start a new miiting.'));
+        pageReloadID = pageReloadID || setTimeout(function() {
+            window.location.reload(true)}, PAGE_RELOAD_TIMEOUT_MS);
+        showPageReloadMessage();
         quack.play();
         finalize();
     }
+}
+
+function showPageReloadMessage() {
+    var reloadTimeout = PAGE_RELOAD_TIMEOUT_MS / 1000;
+    var pageReloadMessageDiv = document.createElement('div');
+    var cancel = document.createElement('span');
+    cancel.className = 'MessagePromptLink';
+    cancel.textContent = 'here';
+    cancel.addEventListener('click', function(event) {
+        window.clearTimeout(pageReloadID);
+        addMessage(null, makeMessageTextDiv('Page reload cancelled.'));
+    });
+    pageReloadMessageDiv.className = 'MessageContent';
+    pageReloadMessageDiv.appendChild(document.createTextNode(
+        href + ' has ended, reloading in ' + reloadTimeout + ' seconds. '));
+    pageReloadMessageDiv.appendChild(document.createElement('br'));
+    pageReloadMessageDiv.appendChild(document.createTextNode('Click '));
+    pageReloadMessageDiv.appendChild(cancel);
+    pageReloadMessageDiv.appendChild(document.createTextNode(
+        ' to cancel page reload.'));
+    addMessage(null, pageReloadMessageDiv);
 }
 
 function deleteMiiting() {
@@ -759,9 +802,10 @@ function abortOnError(error) {
 function showError(object) {
     // Display error based on object type.
     if (object instanceof XMLHttpRequest) {
-        alert(JSON.parse(object.responseText).error);
+        addMessage(null, makeMessageTextDiv('Error: ' +
+            JSON.parse(object.responseText).error));
     } else {
-        alert(object);
+        addMessage(null, makeMessageTextDiv('Error: ' + object));
     }
 }
 
@@ -780,7 +824,7 @@ function makeMessageTextDiv(message) {
 
 function makeFileTransferPromptDiv(fileinfo) {
     var accept = document.createElement('span');
-    accept.className = 'FileTransferLink';
+    accept.className = 'MessagePromptLink';
     accept.textContent = 'accept';
     accept.setAttribute('fileid', fileinfo['fileid']);
     accept.setAttribute('filename', fileinfo['filename']);
@@ -788,7 +832,7 @@ function makeFileTransferPromptDiv(fileinfo) {
     accept.addEventListener('click', acceptFileTransfer);
 
     var decline = document.createElement('span');
-    decline.className = 'FileTransferLink';
+    decline.className = 'MessagePromptLink';
     decline.textContent = 'decline';
     decline.setAttribute('fileid', fileinfo['fileID']);
     decline.setAttribute('filename', fileinfo['filename']);
@@ -810,7 +854,7 @@ function makeFileTransferPromptDiv(fileinfo) {
     fileTransferPromptDiv.appendChild(decline);
     fileTransferPromptDiv.appendChild(document.createTextNode('?'));
 
-    return fileTransferPromptDiv ;
+    return fileTransferPromptDiv;
 }
 
 /* Toggle the maximized / minimized state of the message box. */
@@ -836,6 +880,7 @@ function handleFileSelected() {
     MessageBarInput.readOnly = true;
     ClearFileSelectionButton.style.visibility = 'visible';
 } 
+
 function clearFileSelection() {
     MessageBarFile.value = '';
     MessageBarInput.className = 'MessageBarInputText';
@@ -873,6 +918,7 @@ function acceptFileTransfer(event) {
 
     // Send file transfer accept message.
     messageChannel.send(JSON.stringify({
+        'sender': localName,
         'type': 'filetransfer',
         'payload': {
             'accepted': true,
@@ -903,6 +949,7 @@ function declineFileTransfer(event) {
 
     // Send file transfer decline message.
     messageChannel.send(JSON.stringify({
+        'sender': localName,
         'type': 'filetransfer',
         'payload': {
             'accepted': false,
@@ -1045,6 +1092,7 @@ function handleFileReceptionCompleted(key, fileTransfer) {
     var blob = new Blob(chunks);
     var link = document.createElement('a');
     var progressBar = fileTransfer['progressbar'];
+    link.className = 'MessagePromptLink';
     link.href = URL.createObjectURL(blob);
     link.download = fileTransfer['filename'];
     link.textContent = fileTransfer['filename'];
