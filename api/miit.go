@@ -64,6 +64,7 @@ var keepAliveTimeoutNanoseconds int64
 
 func init() {
 	// Load asset configuration paths.
+	useEmbeddedAssets = config.GetBool("USE_EMBEDDED_ASSETS")
 	miitAssetsPath = config.GetString("MIIT_ASSETS_PATH")
 	miitMainPagePath = config.GetString("MIIT_MAIN_PAGE_PATH")
 	miitNotFoundPagePath = config.GetString("MIIT_NOT_FOUND_PAGE_PATH")
@@ -75,9 +76,15 @@ func init() {
 
 	// Obtain the root router group.
 	root := GetRoot()
-	// TODO:use PushMiitAssets when HTTP/2 server push is available.
-	root.Static("/files", miitAssetsPath)
+
+	//
 	root.GET("/random", RedirectToRandomMiiting)
+	if useEmbeddedAssets {
+		root.GET("/files/:asset", GetAsset)
+	} else {
+		// TODO:use PushMiitAssets when HTTP/2 server push is available.
+		root.Static("/files", miitAssetsPath)
+	}
 
 	// Create router group for miiting module and register handlers.
 	miitingsGroup := root.Group("miitings")
@@ -143,6 +150,7 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 
 // GetMiiting returns the entry page of the specific request.
 func GetMiiting(ctx *gin.Context) {
+
 	ctx.File(miitMainPagePath)
 }
 

@@ -9,40 +9,58 @@
 			"revisionTime": "2017-01-09T09:34:21Z"
 		},
 		{
-			"checksumSHA1": "GeDZMNp/r9c9Ld/NaK9PQuMN5YU=",
+			"checksumSHA1": "wfq0vCZuuUUjczF2EasufD8VQ8k=",
 			"path": "github.com/gin-gonic/gin",
-			"revision": "c00f21ff239822d013b80e54bd403fbc08a0b5ff",
-			"revisionTime": "2018-06-26T10:56:43Z"
+			"revision": "85221af84cf6ee99dc900bc41912abc09acfc1b5",
+			"revisionTime": "2018-07-03T09:17:08Z"
 		},
 		{
-			"checksumSHA1": "O2rrqYI7QQjJYVx8+E8DC8rlIh0=",
+			"checksumSHA1": "BjShmaQTKI8+411rCb7LFqJkLA0=",
 			"path": "github.com/gin-gonic/gin/binding",
-			"revision": "c00f21ff239822d013b80e54bd403fbc08a0b5ff",
-			"revisionTime": "2018-06-26T10:56:43Z"
+			"revision": "85221af84cf6ee99dc900bc41912abc09acfc1b5",
+			"revisionTime": "2018-07-03T09:17:08Z"
 		},
 		{
 			"checksumSHA1": "woO1qIxIeQ1bcbPSiMfAKk3r4xg=",
 			"path": "github.com/gin-gonic/gin/json",
-			"revision": "c00f21ff239822d013b80e54bd403fbc08a0b5ff",
-			"revisionTime": "2018-06-26T10:56:43Z"
+			"revision": "85221af84cf6ee99dc900bc41912abc09acfc1b5",
+			"revisionTime": "2018-07-03T09:17:08Z"
 		},
 		{
-			"checksumSHA1": "DGs8sdsCkNHsU9+fQMM9XHb+ZCE=",
+			"checksumSHA1": "UofNu0l/AwtCBsjPzhtHBBwGv8Q=",
 			"path": "github.com/gin-gonic/gin/render",
-			"revision": "c00f21ff239822d013b80e54bd403fbc08a0b5ff",
-			"revisionTime": "2018-06-26T10:56:43Z"
+			"revision": "85221af84cf6ee99dc900bc41912abc09acfc1b5",
+			"revisionTime": "2018-07-03T09:17:08Z"
 		},
 		{
-			"checksumSHA1": "JZV+pLo8Z/kIYExrZr1Zu9KSKyU=",
+			"checksumSHA1": "ag4CscDKi8ZBExU8jJf03rxonF0=",
 			"path": "github.com/golang/protobuf/proto",
-			"revision": "9eb2c01ac278a5d89ce4b2be68fe4500955d8179",
-			"revisionTime": "2018-06-22T17:40:09Z"
+			"revision": "70b3af33377e7aa25ae42977bed93cc6b90f0373",
+			"revisionTime": "2018-07-12T04:22:25Z"
 		},
 		{
-			"checksumSHA1": "NY84PNFBfNvxJgNEMVKUOJhcVsY=",
+			"checksumSHA1": "Cq9h7eDNXXyR/qJPvO8/Rk4pmFg=",
+			"path": "github.com/jessevdk/go-assets",
+			"revision": "4f4301a06e153ff90e17793577ab6bf79f8dc5c5",
+			"revisionTime": "2016-09-21T14:41:39Z"
+		},
+		{
+			"checksumSHA1": "R8DMUtBmz3EQi3XQmEfU0l3tdgg=",
+			"path": "github.com/jessevdk/go-assets-builder",
+			"revision": "b8483521738fd2198ecfc378067a4e8a6079f8e5",
+			"revisionTime": "2013-09-03T09:17:06Z"
+		},
+		{
+			"checksumSHA1": "OH94abBdbmoVqyRqYBfgUT9N494=",
+			"path": "github.com/jessevdk/go-flags",
+			"revision": "1c38ed7ad0cc3d9e66649ac398c30e45f395c4eb",
+			"revisionTime": "2018-03-31T12:42:32Z"
+		},
+		{
+			"checksumSHA1": "66skRjpx6iDbz6OUSLwmBvPSDUs=",
 			"path": "github.com/json-iterator/go",
-			"revision": "f2b4162afba35581b6d4a50d3b8f34e33c144682",
-			"revisionTime": "2018-06-12T20:28:35Z"
+			"revision": "ab8a2e0c74be9d3be70b3184d9acc634935ded82",
+			"revisionTime": "2018-07-01T07:16:28Z"
 		},
 		{
 			"checksumSHA1": "w5RcOnfv5YDr3j2bd1YydkPiZx4=",
@@ -57,22 +75,22 @@
 			"revisionTime": "2018-03-06T01:26:44Z"
 		},
 		{
-			"checksumSHA1": "ntSr6NgBxGzQG1fgkl5IFgdjCLo=",
+			"checksumSHA1": "ZMzoxY0Lv/LbDmyJXFjlMOyXZC4=",
 			"path": "github.com/modern-go/reflect2",
-			"revision": "58118c1ea9161250907268a484af4dd6ed314280",
-			"revisionTime": "2018-05-11T05:30:14Z"
+			"revision": "4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd",
+			"revisionTime": "2018-07-01T02:34:20Z"
 		},
 		{
-			"checksumSHA1": "d3YqGxTQPV3bo+sXijGmbpjf+WA=",
+			"checksumSHA1": "dAiPFGEqTBO9ovat1DkSheJ6/KQ=",
 			"path": "github.com/ugorji/go/codec",
-			"revision": "edc8f1f6bad21cca2dcbc2f4d4ced265111ccea6",
-			"revisionTime": "2018-06-26T13:29:13Z"
+			"revision": "2e1067cd04ec91c6fdf491ac8028c9d3aea73ab4",
+			"revisionTime": "2018-07-12T10:27:45Z"
 		},
 		{
-			"checksumSHA1": "USMsFbKZrNd1b9oRFbjevPr6PmI=",
+			"checksumSHA1": "su2QDjUzrUO0JnOH9m0cNg0QqsM=",
 			"path": "golang.org/x/sys/unix",
-			"revision": "c4afb3effaa53fd9a06ca61262dc7ce8df4c081b",
-			"revisionTime": "2018-06-26T06:41:42Z"
+			"revision": "1b2967e3c290b7c545b3db0deeda16e9be4f98a2",
+			"revisionTime": "2018-07-06T09:56:39Z"
 		},
 		{
 			"checksumSHA1": "P/k5ZGf0lEBgpKgkwy++F7K1PSg=",
