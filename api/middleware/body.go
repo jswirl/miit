@@ -28,20 +28,15 @@ func Body(size int64) gin.HandlerFunc {
 
 // GetBody returns a copy of the request body if it's present.
 func GetBody(ctx *gin.Context) []byte {
-	// Obtain logger handle.
-	logger := GetLogger(ctx)
-
 	// Lookup the copied request body.
 	value, exists := ctx.Get("body")
 	if !exists {
-		logger.Error("Failed to lookup request body")
 		return nil
 	}
 
 	// Convert the body to byte slice.
 	body, ok := value.([]byte)
 	if !ok {
-		logger.Error("Failed to convert to byte slice")
 		return nil
 	}
 

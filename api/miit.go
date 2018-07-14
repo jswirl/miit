@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/jswirl/miit/api/middleware"
+	"github.com/jswirl/miit/assets"
 	"github.com/jswirl/miit/config"
 	"github.com/jswirl/miit/global"
 	"github.com/jswirl/miit/logging"
@@ -49,48 +50,35 @@ type iceCandidate struct {
 var miitings sync.Map
 var miitingsMutex sync.Mutex
 
+//go:generate go-assets-builder -p assets -o ../assets/assets.go ../assets
+// miitAssetsServer handles the embedded assets from our in-memory filesystem.
+var miitAssetServer = http.FileServer(assets.Assets)
+
 // Parameter error type to signal parameter extraction failed.
 var errParameterExtractionFailed = errors.New("parameter extraction failed")
 
 // miit configurations.
-var miitAssetsPath string
-var miitMainPagePath string
-var miitNotFoundPagePath string
-var miitScriptPath string
 var sdpWaitTimeout time.Duration
 var keepAliveInterval time.Duration
 var keepAliveTimeout time.Duration
 var keepAliveTimeoutNanoseconds int64
 
 func init() {
-	// Load asset configuration paths.
-	useEmbeddedAssets = config.GetBool("USE_EMBEDDED_ASSETS")
-	miitAssetsPath = config.GetString("MIIT_ASSETS_PATH")
-	miitMainPagePath = config.GetString("MIIT_MAIN_PAGE_PATH")
-	miitNotFoundPagePath = config.GetString("MIIT_NOT_FOUND_PAGE_PATH")
-	miitScriptPath = config.GetString("MIIT_JAVASCRIPT_PATH")
+	// Load configuration values.
 	sdpWaitTimeout = config.GetMilliseconds("MIIT_SDP_WAIT_TIMEOUT")
 	keepAliveInterval = config.GetMilliseconds("MIIT_KEEPALIVE_INTERVAL")
 	keepAliveTimeout = config.GetMilliseconds("MIIT_KEEPALIVE_TIMEOUT")
 	keepAliveTimeoutNanoseconds = keepAliveTimeout.Nanoseconds()
 
-	// Obtain the root router group.
-	root := GetRoot()
+	// Setup handlers for assets and random miiting requests.
+	GetRoot().GET("/random", RedirectToRandomMiiting)
+	GetRoot().GET("/assets/:asset", GetMiitAsset)
 
-	//
-	root.GET("/random", RedirectToRandomMiiting)
-	if useEmbeddedAssets {
-		root.GET("/files/:asset", GetAsset)
-	} else {
-		// TODO:use PushMiitAssets when HTTP/2 server push is available.
-		root.Static("/files", miitAssetsPath)
-	}
-
-	// Create router group for miiting module and register handlers.
-	miitingsGroup := root.Group("miitings")
-	miitingsGroup.GET(":miiting", GetMiiting)
+	// Setup miiting module and register handlers.
+	// TODO: use PushMiitAssets when HTTP/2 server push is ready.
+	miitingsGroup := GetRoot().Group("miitings")
 	miitingsGroup.POST("", CreateAndJoinMiiting)
-	miitingsGroup.POST("/", CreateAndJoinMiiting)
+	miitingsGroup.GET(":miiting", GetMiiting)
 	miitingsGroup.PATCH(":miiting", KeepAlive)
 	miitingsGroup.DELETE(":miiting", DeleteMiiting)
 	miitingsGroup.POST(":miiting", SendDescription)
@@ -145,13 +133,19 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 	}
 
 	// No miiting was available, respond with not found page.
-	ctx.File(miitNotFoundPagePath)
+	serveMiitAsset(ctx, "/assets/notfound.html")
 }
 
-// GetMiiting returns the entry page of the specific request.
+// GetMiiting is the handler for miiting bootstrap page requests.
 func GetMiiting(ctx *gin.Context) {
+	// Serve miiting bootstrap page from in-memory filesystem.
+	serveMiitAsset(ctx, "/assets/miit.html")
+}
 
-	ctx.File(miitMainPagePath)
+// GetMiitAsset is the handler for miit asset requests.
+func GetMiitAsset(ctx *gin.Context) {
+	// Respond with requested asset.
+	miitAssetServer.ServeHTTP(ctx.Writer, ctx.Request)
 }
 
 // PushMiitAssets is the handler for pushing the miit assets to clients.
@@ -173,7 +167,11 @@ func PushMiitAssets(ctx *gin.Context) {
 	}
 
 	// Push miit assets to client.
-	assets := []string{miitMainPagePath, miitNotFoundPagePath, miitScriptPath}
+	assets := []string{
+		"assets/miit.html",
+		"assets/notfound.html",
+		"assets/miit.js",
+		"assets/quack.wav"}
 	for _, asset := range assets {
 		if err := pusher.Push(asset, nil); err != nil {
 			abortWithStatusAndMessage(ctx, http.StatusInternalServerError,
@@ -432,6 +430,21 @@ func SendIceCandidates(ctx *gin.Context) {
 
 	// Respond with empty JSON.
 	ctx.JSON(http.StatusOK, gin.H{})
+}
+
+// serveMiitAsset responds with content of in-memory assets.
+func serveMiitAsset(ctx *gin.Context, miitAssetPath string) {
+	// Open miit asset file from in-memory filesystem.
+	miitAssetFile, err := assets.Assets.Open(miitAssetPath)
+	if err != nil {
+		abortWithStatusAndMessage(ctx, http.StatusInternalServerError,
+			"Failed to open %s: %v", miitAssetPath, err)
+		return
+	}
+
+	// Respond with miit asset content.
+	http.ServeContent(ctx.Writer, ctx.Request,
+		miitAssetPath, time.Now(), miitAssetFile)
 }
 
 // extractParameters extracts common parameters from a request.

@@ -13,6 +13,9 @@ LDFLAGS += -s -w
 all: ${SERVICE_NAME}
 
 ${SERVICE_NAME}: clean
+	@# Generate in-memory assets filesystem.
+	go generate ./api
+	@# Compile binary executable.
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./${SERVICE_NAME} -ldflags "$(LDFLAGS)" ./main.go
 
 clean:

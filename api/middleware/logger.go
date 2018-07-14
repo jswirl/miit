@@ -15,9 +15,11 @@ import (
 
 // ignoredPrefixes is a list of URL prefixes that we should ignore from logging.
 var ignoredPrefixes = map[string]string{
-	"/alive":    http.MethodGet,
-	"/ready":    http.MethodGet,
-	"/miitings": http.MethodPatch,
+	"/alive":          http.MethodGet,
+	"/ready":          http.MethodGet,
+	"/system/time":    http.MethodGet,
+	"/system/version": http.MethodGet,
+	"/miitings":       http.MethodPatch,
 }
 
 // Logger returns a request logger middleware, which logs the HTTP request and

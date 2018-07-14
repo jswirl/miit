@@ -4,7 +4,9 @@
 /* API server URL */
 var href = window.location.href;
 var miitingID = href.split('/').pop();
-var miitingsUrl =  href.replace(miitingID, 'miitings');
+var miitingsUrl =  href.includes('miitings') ?
+    href.substring(0, href.lastIndexOf('/')) :
+    href.replace(miitingID, 'miitings');
 var apiUrl = miitingsUrl + '/' + miitingID;
 
 /* Our name and our peer's name to be displayed */
@@ -125,7 +127,7 @@ function initialize() {
     MessageBarButton.addEventListener('click', sendMessageAndData);
 
     // Load notification sounds.
-    quack = new Audio('/files/quack.wav');
+    quack = new Audio('/assets/quack.wav');
 
     // Polyfill to setup browser WebRTC components.
     window.URL =
