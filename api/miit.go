@@ -387,7 +387,7 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	// Respond with error code if waiting for ICE candidates has timed out.
 	if iceCandidates == nil {
 		abortWithStatusAndMessage(ctx, http.StatusGatewayTimeout,
-			"Timed-out waiting for ICE candidates from peer")
+			"No ICE candidates received from peer")
 		return
 	}
 
