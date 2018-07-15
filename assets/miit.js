@@ -38,6 +38,9 @@ var fileCount = 0;
 /* Our role in the miiting session. */
 var isInitiator = true;
 
+/* Flag indicating if our browser is capable of media functions. */
+var isMediaCapable = false;
+
 /* WebRTC variables & HTML components */
 var rtcPeerConnection, messageChannel, fileChannel;
 var LocalVideo, LocalName, RemoteVideo, RemoteName;
@@ -190,7 +193,9 @@ function finalize() {
 
 function run() {
     // Check if MediaDevices API is available.
-    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+    isMediaCapable = navigator.mediaDevices != null &&
+        navigator.mediaDevices.enumerateDevices != null;
+    if (!isMediaCapable) {
         addMessage(null, makeMessageTextDiv(
             'Error: MediaDevices API not available'));
     }
@@ -312,6 +317,8 @@ function setupDataChannels() {
 
 function enumerateMediaDevices() {
     console.log('Detecting media devices...');
+    if (!isMediaCapable)
+        return Promise.resolve();
     return navigator.mediaDevices.enumerateDevices();
 }
 
@@ -319,14 +326,8 @@ function setMediaDeviceConstraints(devices) {
     console.log('Detected media devices: ');
     console.log(devices);
 
-    // Gather audio & video devices;
-    var cameras = devices.filter(device => device.kind == 'videoinput');
-    var microphones = devices.filter(device => device.kind == 'audioinput');
-
-    // Compose constraints based on available media devices.
+    // Compose constraints and options.
     constraints = {
-        'audio': microphones.length > 0,
-        'video': cameras.length > 0 ? videoSettings : false,
         'optional': {
             'DtlsSrtpKeyAgreement': true,
             'offerToReceiveAudio': true,
@@ -334,6 +335,18 @@ function setMediaDeviceConstraints(devices) {
             'voiceActivityDetection': false,
         },
     };
+
+    // Do nothing if browser has no media capabilities.
+    if (!isMediaCapable)
+        return constraints;
+
+    // Gather audio & video devices;
+    var cameras = devices.filter(device => device.kind == 'videoinput');
+    var microphones = devices.filter(device => device.kind == 'audioinput');
+
+    // Set media related constraints based on available media devices.
+    constraints['audio'] = microphones.length > 0;
+    constraints['video'] = cameras.length > 0 ? videoSettings : false;
 
     console.log('Using constraints: ');
     console.log(constraints);
@@ -343,11 +356,15 @@ function setMediaDeviceConstraints(devices) {
 
 function getUserMedia(constraints) {
     console.log('Initializing browser Media API...');
+    if (!isMediaCapable)
+        return;
     return navigator.mediaDevices.getUserMedia(constraints);
 }
 
 function setLocalMediaStream(localStream) {
     console.log('Initialized browser Media, adding tracks...');
+    if (!isMediaCapable)
+        return;
     LocalVideo.srcObject = localStream;
     localStream.getTracks().forEach(track =>
        rtcPeerConnection.addTrack(track, localStream));
@@ -361,9 +378,13 @@ function createOffer() {
 function adjustMediaCodecPriority(description) {
     console.log('Configuring preferred codecs...');
 
+    // Do nothing if our browser has no media capabilities.
+    if (!isMediaCapable)
+        return description;
+
     // Iterate throuh all SDP lines and find media descriptions.
     var sdpLines = description.sdp.split('\r\n');
-    var audioLineIndex, videoLineIndex, rtpmaps = {};
+    var audioLineIndex = -1, videoLineIndex = -1, rtpmaps = {};
     for (var idx = 0; idx < sdpLines.length; idx++) {
         var sdpLine = sdpLines[idx];
         if (sdpLine.startsWith('m=audio')) {
@@ -381,7 +402,8 @@ function adjustMediaCodecPriority(description) {
     }
 
     // Handle audio payload priority reordering.
-    var audioLineParts = sdpLines[audioLineIndex].split(' ');
+    var audioLineParts = audioLineIndex < 0 ? [] :
+        sdpLines[audioLineIndex].split(' ');
     for (var idx = 3, nextIdx = 3; idx < audioLineParts.length; idx++) {
         var audioCodec = rtpmaps[parseInt(audioLineParts[idx])];
         if (audioCodec.startsWith(preferredAudioCodec)) {
@@ -394,7 +416,8 @@ function adjustMediaCodecPriority(description) {
     sdpLines[audioLineIndex] = audioLineParts.join(' ');
 
     // Handle video payload priority reordering.
-    var videoLineParts = sdpLines[videoLineIndex].split(' ');
+    var videoLineParts = videoLineIndex < 0 ? [] :
+        sdpLines[videoLineIndex].split(' ');
     for (var idx = 3, nextIdx = 3; idx < videoLineParts.length; idx++) {
         var videoCodec = rtpmaps[parseInt(videoLineParts[idx])];
         if (videoCodec.startsWith(preferredVideoCodec)) {
