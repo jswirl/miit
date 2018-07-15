@@ -309,7 +309,7 @@ func ReceiveDescription(ctx *gin.Context) {
 	// Respond with error code if waiting for the description has timed out.
 	if sdp == nil {
 		abortWithStatusAndMessage(ctx, http.StatusGatewayTimeout,
-			"Timed-out waiting for description from peer")
+			"No description received from peer")
 		return
 	}
 
