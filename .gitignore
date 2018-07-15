@@ -16,6 +16,7 @@ miit
 
 # go:generate-ed sources
 *_gen.go
+assets/assets.go
 
 # govendor packages
 vendor/*
