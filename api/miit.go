@@ -26,7 +26,7 @@ type miiting struct {
 	id         string
 	ctx        context.Context
 	cancel     context.CancelFunc
-	timestamp  *int64
+	timestamp  int64
 	tokens     sync.Map
 	offerChan  chan interface{}
 	answerChan chan interface{}
@@ -209,7 +209,7 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	nowNano := int64(time.Now().Nanosecond())
 	if !exists {
 		storedMiiting.id = miitingID
-		storedMiiting.timestamp = &nowNano
+		atomic.StoreInt64(&storedMiiting.timestamp, nowNano)
 		storedMiiting.tokens = sync.Map{}
 		storedMiiting.tokens.Store(token, nowNano)
 		storedMiiting.offerChan = make(chan interface{}, 1)
@@ -245,7 +245,7 @@ func KeepAlive(ctx *gin.Context) {
 
 	// Update timestamps.
 	nowNano := int64(time.Now().Nanosecond())
-	atomic.StoreInt64(miiting.timestamp, nowNano)
+	atomic.StoreInt64(&miiting.timestamp, nowNano)
 	miiting.tokens.Store(token, nowNano)
 
 	// Done refreshing timestamps, return empty response.
@@ -503,7 +503,7 @@ func miitingMonitor(miiting *miiting) {
 		nowNano := int64(time.Now().Nanosecond())
 
 		// Perform session timeout invalidation.
-		elapsed := nowNano - atomic.LoadInt64(miiting.timestamp)
+		elapsed := nowNano - atomic.LoadInt64(&miiting.timestamp)
 		if elapsed > keepAliveTimeoutNanoseconds {
 			logging.Info("miiting [%s] has timed-out", miitingID)
 			deleteMiiting()
