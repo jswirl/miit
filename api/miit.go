@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,15 +22,15 @@ import (
 
 // miiting is the object representing a miiting.
 type miiting struct {
-	id         string               `json:"-"`
-	ctx        context.Context      `json:"-"`
-	cancel     context.CancelFunc   `json:"-"`
-	once       sync.Once            `json:"-"`
-	timestamp  time.Time            `json:"-"`
-	tokens     map[string]time.Time `json:"-"`
-	offerChan  chan interface{}     `json:"-"`
-	answerChan chan interface{}     `json:"-"`
-	deleteChan chan bool            `json:"-"`
+	// All fields are unexported, no json tag needed.
+	id         string
+	ctx        context.Context
+	cancel     context.CancelFunc
+	timestamp  int64
+	tokens     map[string]*int64
+	offerChan  chan interface{}
+	answerChan chan interface{}
+	deleteChan chan bool
 }
 
 // sessionDescription is the model of a offer/answer session description.
@@ -48,7 +49,6 @@ type iceCandidate struct {
 // miitings contains all current miitings. miitingsMutex is used to
 // synchronize deletion of a miiting between multiple goroutines.
 var miitings sync.Map
-var miitingsMutex sync.Mutex
 
 //go:generate go-assets-builder -p assets -o ../assets/assets.go ../assets
 // miitAssetsServer handles the embedded assets from our in-memory filesystem.
@@ -208,9 +208,10 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	storedMiiting, _ := miitingIntf.(*miiting)
 	if !exists {
 		storedMiiting.id = miitingID
-		storedMiiting.timestamp = time.Now()
-		storedMiiting.tokens = map[string]time.Time{}
-		storedMiiting.tokens[token] = time.Now()
+		nowNano := int64(time.Now().Nanosecond())
+		storedMiiting.timestamp = nowNano
+		storedMiiting.tokens = map[string]*int64{}
+		storedMiiting.tokens[token] = &nowNano
 		storedMiiting.offerChan = make(chan interface{}, 1)
 		storedMiiting.answerChan = make(chan interface{}, 1)
 		storedMiiting.deleteChan = make(chan bool, 2)
@@ -224,7 +225,8 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	// At most two users are allowed to join a miiting.
 	if len(storedMiiting.tokens) < 2 {
 		// Add to the list of participating user tokens. if
-		storedMiiting.tokens[token] = time.Now()
+		nowNano := int64(time.Now().Nanosecond())
+		storedMiiting.tokens[token] = &nowNano
 		ctx.JSON(http.StatusOK, storedMiiting)
 		return
 	}
@@ -242,17 +244,10 @@ func KeepAlive(ctx *gin.Context) {
 		return
 	}
 
-	// Check if token is valid before refreshing timestamps.
-	if !tokenIsValid(miiting, token) {
-		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
-			"Unauthorized token: [%s]", token)
-		return
-	}
-
 	// Update timestamps.
-	now := time.Now()
-	miiting.timestamp = now
-	miiting.tokens[token] = now
+	nowNano := int64(time.Now().Nanosecond())
+	atomic.StoreInt64(&miiting.timestamp, nowNano)
+	atomic.StoreInt64(miiting.tokens[token], nowNano)
 
 	// Done refreshing timestamps, return empty response.
 	ctx.JSON(http.StatusOK, gin.H{})
@@ -261,20 +256,14 @@ func KeepAlive(ctx *gin.Context) {
 // DeleteMiiting is the handler for requests deleting a miiting.
 func DeleteMiiting(ctx *gin.Context) {
 	// Extract parameters from request.
-	miiting, _, token, err := extractParameters(ctx, false)
+	miiting, _, _, err := extractParameters(ctx, false)
 	if err != nil {
 		return
 	}
 
-	// Delete the miiting from miitings map.if token is valid.
-	if !tokenIsValid(miiting, token) {
-		abortWithStatusAndMessage(ctx, http.StatusUnauthorized,
-			"Unauthorized token: [%s]", token)
-	} else {
-		// Notify monitor to delete miiting.
-		miiting.deleteChan <- true
-		ctx.JSON(http.StatusOK, gin.H{})
-	}
+	// Notify monitor to delete miiting.
+	miiting.deleteChan <- true
+	ctx.JSON(http.StatusOK, gin.H{})
 }
 
 // ReceiveDescription is the handler for receiving a SDP offer / answer.
@@ -301,7 +290,7 @@ func ReceiveDescription(ctx *gin.Context) {
 	var sdp *sessionDescription
 	select {
 	case data := <-sdpChan:
-		sdp, _ = data.(*sessionDescription)
+		sdp = data.(*sessionDescription)
 	case <-time.After(sdpWaitTimeout):
 	case <-miiting.ctx.Done():
 	}
@@ -379,7 +368,7 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	var iceCandidates []*iceCandidate
 	select {
 	case data := <-iceCandidatesChan:
-		iceCandidates, _ = data.([]*iceCandidate)
+		iceCandidates = data.([]*iceCandidate)
 	case <-time.After(sdpWaitTimeout):
 	case <-miiting.ctx.Done():
 	}
@@ -512,8 +501,10 @@ func miitingMonitor(miiting *miiting) {
 
 	// Keep monitoring miiting status until context is cancelled.
 	for miiting.ctx.Err() == nil {
+		nowNano := int64(time.Now().Nanosecond())
+
 		// Perform session timeout invalidation.
-		elapsed := time.Since(miiting.timestamp).Nanoseconds()
+		elapsed := nowNano - atomic.LoadInt64(&miiting.timestamp)
 		if elapsed > keepAliveTimeoutNanoseconds {
 			logging.Info("miiting [%s] has timed-out", miitingID)
 			deleteMiiting()
@@ -522,7 +513,7 @@ func miitingMonitor(miiting *miiting) {
 
 		// Perform individual participant timeout invalidation.
 		for token, timestamp := range miiting.tokens {
-			elapsed := time.Since(timestamp).Nanoseconds()
+			elapsed := nowNano - atomic.LoadInt64(timestamp)
 			if elapsed > keepAliveTimeoutNanoseconds {
 				logging.Info("Token [%s] of [%s] has timed-out",
 					token, miitingID)
