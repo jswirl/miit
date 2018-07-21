@@ -27,7 +27,7 @@ type miiting struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	timestamp  *int64
-	tokens     map[string]*int64
+	tokens     sync.Map
 	offerChan  chan interface{}
 	answerChan chan interface{}
 	deleteChan chan bool
@@ -96,14 +96,14 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 	// Iterate through the current miitings and randomly choose one to redirect to.
 	var chosen string
 	count := 1
-	miitings.Range(func(key interface{}, value interface{}) bool {
+	miitings.Range(func(key, value interface{}) bool {
 		// Obtain the original key/value.
 		miitingID := key.(string)
 		miiting := value.(*miiting)
 
 		// Make sure the meeting is not established and ongoing.
 		// "cafeteria" is reserved for Zhe & Mao.
-		if len(miiting.tokens) >= 2 ||
+		if countLen(&miiting.tokens) >= 2 ||
 			miitingID == "cafeteria" {
 			return true
 		}
@@ -206,13 +206,12 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	value := miiting{}
 	miitingIntf, exists := miitings.LoadOrStore(miitingID, &value)
 	storedMiiting, _ := miitingIntf.(*miiting)
+	nowNano := int64(time.Now().Nanosecond())
 	if !exists {
 		storedMiiting.id = miitingID
-		nowNano := int64(time.Now().Nanosecond())
 		storedMiiting.timestamp = &nowNano
-		storedMiiting.tokens = map[string]*int64{}
-		nowNanoCopy := nowNano
-		storedMiiting.tokens[token] = &nowNanoCopy
+		storedMiiting.tokens = sync.Map{}
+		storedMiiting.tokens.Store(token, nowNano)
 		storedMiiting.offerChan = make(chan interface{}, 1)
 		storedMiiting.answerChan = make(chan interface{}, 1)
 		storedMiiting.deleteChan = make(chan bool, 2)
@@ -224,10 +223,9 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	}
 
 	// At most two users are allowed to join a miiting.
-	if len(storedMiiting.tokens) < 2 {
+	if countLen(&storedMiiting.tokens) < 2 {
 		// Add to the list of participating user tokens. if
-		nowNano := int64(time.Now().Nanosecond())
-		storedMiiting.tokens[token] = &nowNano
+		storedMiiting.tokens.Store(token, nowNano)
 		ctx.JSON(http.StatusOK, storedMiiting)
 		return
 	}
@@ -248,7 +246,7 @@ func KeepAlive(ctx *gin.Context) {
 	// Update timestamps.
 	nowNano := int64(time.Now().Nanosecond())
 	atomic.StoreInt64(miiting.timestamp, nowNano)
-	atomic.StoreInt64(miiting.tokens[token], nowNano)
+	miiting.tokens.Store(token, nowNano)
 
 	// Done refreshing timestamps, return empty response.
 	ctx.JSON(http.StatusOK, gin.H{})
@@ -513,15 +511,17 @@ func miitingMonitor(miiting *miiting) {
 		}
 
 		// Perform individual participant timeout invalidation.
-		for token, timestamp := range miiting.tokens {
-			elapsed := nowNano - atomic.LoadInt64(timestamp)
+		miiting.tokens.Range(func(token, timestamp interface{}) bool {
+			elapsed := nowNano - timestamp.(int64)
 			if elapsed > keepAliveTimeoutNanoseconds {
 				logging.Info("Token [%s] of [%s] has timed-out",
 					token, miitingID)
 				deleteMiiting()
-				return
+				return false
 			}
-		}
+
+			return true
+		})
 
 		// Sleep until next invalidation check.
 		select {
@@ -537,6 +537,16 @@ func miitingMonitor(miiting *miiting) {
 // Check if the provided token is in our miiting tokens;
 func tokenIsValid(miiting *miiting, token string) bool {
 	// Iterate through all tokens in our miiting.
-	_, exists := miiting.tokens[token]
+	_, exists := miiting.tokens.Load(token)
 	return exists
+}
+
+func countLen(m *sync.Map) int {
+	len := 0
+	m.Range(func(key, value interface{}) bool {
+		len++
+		return true
+	})
+
+	return len
 }
