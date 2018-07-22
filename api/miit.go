@@ -492,10 +492,9 @@ func miitingMonitor(miiting *miiting) {
 	// Setup delete miiting function.
 	deleteMiiting := func() {
 		logging.Info("Deleting miiting [%s]...", miiting.id)
-		defer miitings.Delete(miiting.id)
-		defer miiting.cancel()
-		close(miiting.offerChan)
-		close(miiting.answerChan)
+		miitings.Delete(miiting.id)
+		miiting.cancel()
+		// Leave offerChan and answerChan open to avoid SendIceCandidates and SendDescription panic.
 	}
 
 	// Keep monitoring miiting status until context is cancelled.
