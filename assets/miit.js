@@ -88,13 +88,11 @@ function main() {
     localName = getCookie(miitingID + '.username');
     if (localName == null || localName.length <= 0) {
         localName = prompt('Please enter your name:', localName);
+        // Stop execution if user clicked cancel.
+        if (localName == null)
+            return;
         document.cookie = miitingID + '.username=' + localName;
     }
-
-        // Stop execution if user clicked cancel.
-        if (localName == null) {
-            return;
-        }
 
     // Initialize browser Media API & DOM elements.
     initialize();

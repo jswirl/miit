@@ -103,7 +103,7 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 
 		// Make sure the meeting is not established and ongoing.
 		// "cafeteria" is reserved for Zhe & Mao.
-		if countLen(&miiting.tokens) >= 2 ||
+		if countMiitings(&miiting.tokens) >= 2 ||
 			miitingID == "cafeteria" {
 			return true
 		}
@@ -209,7 +209,7 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	nowNano := int64(time.Now().Nanosecond())
 	if !exists {
 		storedMiiting.id = miitingID
-		atomic.StoreInt64(&storedMiiting.timestamp, nowNano)
+		atomic.StoreInt64(&(storedMiiting).timestamp, nowNano)
 		storedMiiting.tokens = sync.Map{}
 		storedMiiting.tokens.Store(token, nowNano)
 		storedMiiting.offerChan = make(chan interface{}, 1)
@@ -223,7 +223,7 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	}
 
 	// At most two users are allowed to join a miiting.
-	if countLen(&storedMiiting.tokens) < 2 {
+	if countMiitings(&storedMiiting.tokens) < 2 {
 		// Add to the list of participating user tokens. if
 		storedMiiting.tokens.Store(token, nowNano)
 		ctx.JSON(http.StatusOK, storedMiiting)
@@ -245,7 +245,7 @@ func KeepAlive(ctx *gin.Context) {
 
 	// Update timestamps.
 	nowNano := int64(time.Now().Nanosecond())
-	atomic.StoreInt64(&miiting.timestamp, nowNano)
+	atomic.StoreInt64(&(miiting.timestamp), nowNano)
 	miiting.tokens.Store(token, nowNano)
 
 	// Done refreshing timestamps, return empty response.
@@ -289,7 +289,7 @@ func ReceiveDescription(ctx *gin.Context) {
 	var sdp *sessionDescription
 	select {
 	case data := <-sdpChan:
-		sdp = data.(*sessionDescription)
+		sdp, _ = data.(*sessionDescription)
 	case <-time.After(sdpWaitTimeout):
 	case <-miiting.ctx.Done():
 	}
@@ -367,7 +367,7 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	var iceCandidates []*iceCandidate
 	select {
 	case data := <-iceCandidatesChan:
-		iceCandidates = data.([]*iceCandidate)
+		iceCandidates, _ = data.([]*iceCandidate)
 	case <-time.After(sdpWaitTimeout):
 	case <-miiting.ctx.Done():
 	}
@@ -492,17 +492,15 @@ func miitingMonitor(miiting *miiting) {
 	// Setup delete miiting function.
 	deleteMiiting := func() {
 		logging.Info("Deleting miiting [%s]...", miiting.id)
-		miitings.Delete(miiting.id)
 		miiting.cancel()
-		// Leave offerChan and answerChan open to avoid SendIceCandidates and SendDescription panic.
+		miitings.Delete(miiting.id)
 	}
 
 	// Keep monitoring miiting status until context is cancelled.
 	for miiting.ctx.Err() == nil {
-		nowNano := int64(time.Now().Nanosecond())
-
 		// Perform session timeout invalidation.
-		elapsed := nowNano - atomic.LoadInt64(&miiting.timestamp)
+		nowNano := int64(time.Now().Nanosecond())
+		elapsed := nowNano - atomic.LoadInt64(&(miiting.timestamp))
 		if elapsed > keepAliveTimeoutNanoseconds {
 			logging.Info("miiting [%s] has timed-out", miitingID)
 			deleteMiiting()
@@ -540,7 +538,8 @@ func tokenIsValid(miiting *miiting, token string) bool {
 	return exists
 }
 
-func countLen(m *sync.Map) int {
+// Return number of miitings in existence.
+func countMiitings(m *sync.Map) int {
 	len := 0
 	m.Range(func(key, value interface{}) bool {
 		len++
