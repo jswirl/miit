@@ -1019,8 +1019,7 @@ function handleFileReaderBlock(event) {
 
     for (var idx = 0; idx * CHUNK_SIZE < block.byteLength; idx++) {
         var chunkOffset = idx * CHUNK_SIZE;
-        var chunkLength = Math.min(CHUNK_SIZE,
-            block.byteLength - chunkOffset);
+        var chunkLength = Math.min(CHUNK_SIZE, block.byteLength - chunkOffset);
         var chunkArray = new Uint8Array(block, chunkOffset, chunkLength);
         handleFileReaderChunk(fileTransfer, chunkArray);
     }

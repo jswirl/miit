@@ -15,7 +15,6 @@ func init() {
 	// Register the liveness/readiness probe handlers.
 	root.GET("alive", Alive)
 	root.GET("ready", Ready)
-
 }
 
 // Alive is the handler for Kubernetes liveness probes.

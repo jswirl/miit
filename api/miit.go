@@ -206,10 +206,10 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	value := miiting{}
 	miitingIntf, exists := miitings.LoadOrStore(miitingID, &value)
 	storedMiiting, _ := miitingIntf.(*miiting)
-	nowNano := int64(time.Now().Nanosecond())
+	nowNano := int64(time.Now().UnixNano())
 	if !exists {
 		storedMiiting.id = miitingID
-		atomic.StoreInt64(&(storedMiiting).timestamp, nowNano)
+		atomic.StoreInt64(&(storedMiiting.timestamp), nowNano)
 		storedMiiting.tokens = sync.Map{}
 		storedMiiting.tokens.Store(token, nowNano)
 		storedMiiting.offerChan = make(chan interface{}, 1)
@@ -244,7 +244,7 @@ func KeepAlive(ctx *gin.Context) {
 	}
 
 	// Update timestamps.
-	nowNano := int64(time.Now().Nanosecond())
+	nowNano := int64(time.Now().UnixNano())
 	atomic.StoreInt64(&(miiting.timestamp), nowNano)
 	miiting.tokens.Store(token, nowNano)
 
@@ -499,7 +499,7 @@ func miitingMonitor(miiting *miiting) {
 	// Keep monitoring miiting status until context is cancelled.
 	for miiting.ctx.Err() == nil {
 		// Perform session timeout invalidation.
-		nowNano := int64(time.Now().Nanosecond())
+		nowNano := int64(time.Now().UnixNano())
 		elapsed := nowNano - atomic.LoadInt64(&(miiting.timestamp))
 		if elapsed > keepAliveTimeoutNanoseconds {
 			logging.Info("miiting [%s] has timed-out", miitingID)

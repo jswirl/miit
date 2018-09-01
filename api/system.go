@@ -19,7 +19,6 @@ func init() {
 	// Register the system module handlers.
 	systemGroup.GET("version", Version)
 	systemGroup.GET("time", Time)
-
 }
 
 // Version is the handler for responding system version requests.
