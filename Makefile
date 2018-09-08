@@ -20,3 +20,4 @@ ${SERVICE_NAME}: clean
 
 clean:
 	rm -f ./${SERVICE_NAME}
+	rm -f ./assets/*.go

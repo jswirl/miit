@@ -80,7 +80,7 @@ var preferredVideoCodec = 'H264';
 var videoSettings = {
     'width': { 'min': 160, 'ideal': 320, 'max': 640 },
     'height': { 'min': 120, 'ideal': 240, 'max': 480 },
-    'frameRate': { 'min': 5, 'ideal': 30, 'max': 30 }
+    'frameRate': { 'min': 1, 'ideal': 30, 'max': 30 }
 }
 
 function main() {
