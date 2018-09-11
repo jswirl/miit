@@ -474,15 +474,6 @@ func extractParameters(ctx *gin.Context, typeRequired bool) (
 	return miiting, sdpType, token, nil
 }
 
-// Abort request processing and respond with error message.
-func abortWithStatusAndMessage(ctx *gin.Context, status int,
-	format string, arguments ...interface{}) {
-	logger := middleware.GetLogger(ctx)
-	message := fmt.Sprintf(format, arguments...)
-	ctx.AbortWithStatusJSON(status, gin.H{"error": message})
-	logger.Error(message)
-}
-
 // miitingMonitor is the goroutine for monitoring the state of a miiting.
 func miitingMonitor(miiting *miiting) {
 	// Keep a copy of miiting ID, since it may be deleted while sleeping.

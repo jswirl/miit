@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -60,4 +61,13 @@ func installCommonMiddleware(group *gin.RouterGroup) {
 
 	// Install recovery middleware, a middleware to recover & log panics.
 	group.Use(middleware.Recovery())
+}
+
+// Abort request processing and respond with error message.
+func abortWithStatusAndMessage(ctx *gin.Context, status int,
+	format string, arguments ...interface{}) {
+	logger := middleware.GetLogger(ctx)
+	message := fmt.Sprintf(format, arguments...)
+	ctx.AbortWithStatusJSON(status, gin.H{"error": message})
+	logger.Error(message)
 }
