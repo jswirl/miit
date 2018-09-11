@@ -22,12 +22,23 @@
                 text-decoration: none; font-weight: bold;
             }
         </style>
+        <script type='text/javascript'>
+            function createRandomMiiting() {
+                var url = window.location.protocol + '//' +
+                    window.location.host + '/' +
+                    Math.random().toString(36).substring(2);
+                window.location.href = url;
+            }
+        </script>
     </head>
     <body bgcolor='black'>
         <div id='Center'>
             <div id='Message'>
                 No open miitings available.<br>
-                Please try again later.<br><br><br><br>
+                Please try again later,<br>
+                or you can randomly
+                <a href='javascript:createRandomMiiting()'>create</a>
+                one.<br><br><br><br>
                 <a id='miit' href='https://miit.tw'>m<font color='royalblue'>i</font><font color='seagreen'>i</font>t</a>
             </div>
         </div>
