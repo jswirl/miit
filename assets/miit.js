@@ -55,11 +55,11 @@ var localIceCandidates = [], pageReloadID;
 var peerConnectionConfig = {
     'iceServers': [
         { 'urls': 'stun:stun.l.google.com:19302' },
-        { 'urls': 'stun:stun.xten.com' },
+        { 'urls': 'stun:stun.services.mozilla.com' },
         // { urls: 'stun:stunserver.org' },
-        // { urls: 'stun:stun.services.mozilla.com' },
+        // { 'urls': 'stun:stun.xten.com' },
     ],
-    'bundlePolicy': 'balanced',
+    'bundlePolicy': 'max-compat',
     'iceCandidatePoolSize': 5,
     'iceTransportPolicy': 'all',
     'rtcpMuxPolicy': 'require',
