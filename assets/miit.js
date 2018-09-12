@@ -17,8 +17,10 @@ var remoteName = 'anonymous';
 var token = generateToken();
 
 /* Keep-alive task handle and send interval in milliseconds */
-const KEEP_ALIVE_INTERVAL = 10000;
+const KEEP_ALIVE_INTERVAL = 5000;
+const KEEP_ALIVE_ERROR_THRESHOLD_COUNT = 3;
 var keepAliveHandle;
+var keepAliveErrorCount = 0;
 
 /* Page reload timeout when disconnected. */
 const PAGE_RELOAD_TIMEOUT_MS = 15 * 1000;
@@ -51,14 +53,16 @@ var localIceCandidates = [], pageReloadID;
 
 /* ICE Server Configurations */
 var peerConnectionConfig = {
-    iceServers: [
+    'iceServers': [
         { 'urls': 'stun:stun.l.google.com:19302' },
         { 'urls': 'stun:stun.xten.com' },
         // { urls: 'stun:stunserver.org' },
         // { urls: 'stun:stun.services.mozilla.com' },
     ],
-    bundlePolicy: 'max-compat',
-    iceTransportPolicy: 'all',
+    'bundlePolicy': 'balanced',
+    'iceCandidatePoolSize': 5,
+    'iceTransportPolicy': 'all',
+    'rtcpMuxPolicy': 'require',
 };
 
 /* File transfer datachannel options. */
@@ -272,11 +276,21 @@ function beginKeepAlive() {
 
 function sendKeepAliveRequest() {
     request('PATCH', apiUrl + '?token=' + token, '{}', true).
-        then(handleKeepAliveResponse).catch(teardown);
+        then(handleKeepAliveResponse).catch(handleKeepAliveError);
 }
 
 function handleKeepAliveResponse(xhr) {
     if (xhr.status >= 400) {
+        console.log('Keep-alive error: ' + error);
+        if (++keepAliveErrorCount >= KEEP_ALIVE_ERROR_THRESHOLD_COUNT) {
+            teardown();
+        }
+    }
+}
+
+function handleKeepAliveError(error) {
+    console.log('Keep-alive error: ' + error);
+    if (++keepAliveErrorCount >= KEEP_ALIVE_ERROR_THRESHOLD_COUNT) {
         teardown();
     }
 }
