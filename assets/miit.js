@@ -54,12 +54,28 @@ var localIceCandidates = [], pageReloadID;
 /* ICE Server Configurations */
 var peerConnectionConfig = {
     'iceServers': [
-        { 'urls': 'stun:stun.l.google.com:19302' },
-        { 'urls': 'stun:stun.services.mozilla.com' },
-        // { urls: 'stun:stunserver.org' },
-        // { 'urls': 'stun:stun.xten.com' },
+        {
+            'urls': [
+                'stun:stun.l.google.com:19302',
+                'stun:stun.services.mozilla.com',
+                // 'stun:stunserver.org',
+                // 'stun:stun.xten.com',
+            ],
+        },
+        {
+            // TODO: setup TURN servers.
+            // Borrow these for testing for the time being.
+            'urls': [
+                'turn:173.194.203.127:19305?transport=udp',
+                'turn:[2607:f8b0:400e:c05::7f]:19305?transport=udp',
+                'turn:173.194.203.127:19305?transport=tcp',
+                'turn:[2607:f8b0:400e:c05::7f]:19305?transport=tcp',
+            ],
+            'username': 'CMrw7dwFEgbAETfdivQYzc/s6OMTIICjBQ',
+            'credential':'Rdg4lTerPbdb9HDWPvBn7DgHXiA=',
+        },
     ],
-    'bundlePolicy': 'max-compat',
+    'bundlePolicy': 'balanced',
     'iceCandidatePoolSize': 5,
     'iceTransportPolicy': 'all',
     'rtcpMuxPolicy': 'require',
@@ -73,8 +89,15 @@ var fileChannelOptions = {
     'negotiated': false,
 };
 
-/* Media constraints. */
-var constraints;
+/* Media constraints and options. */
+var constraints = {
+    'optional': {
+        'DtlsSrtpKeyAgreement': true,
+        'offerToReceiveAudio': true,
+        'offerToReceiveVideo': true,
+        'voiceActivityDetection': false,
+    },
+};
 
 /* Codec preferences */
 var preferredAudioCodec = 'opus';
@@ -84,7 +107,7 @@ var preferredVideoCodec = 'H264';
 var videoSettings = {
     'width': { 'min': 160, 'ideal': 320, 'max': 640 },
     'height': { 'min': 120, 'ideal': 240, 'max': 480 },
-    'frameRate': { 'min': 1, 'ideal': 30, 'max': 30 }
+    'frameRate': { 'min': 1, 'ideal': 30, 'max': 60 }
 }
 
 function main() {
@@ -337,16 +360,6 @@ function enumerateMediaDevices() {
 function setMediaDeviceConstraints(devices) {
     console.log('Detected media devices: ');
     console.log(devices);
-
-    // Compose constraints and options.
-    constraints = {
-        'optional': {
-            'DtlsSrtpKeyAgreement': true,
-            'offerToReceiveAudio': true,
-            'offerToReceiveVideo': true,
-            'voiceActivityDetection': false,
-        },
-    };
 
     // Do nothing if browser has no media capabilities.
     if (!isMediaCapable)
