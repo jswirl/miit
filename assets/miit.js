@@ -304,7 +304,6 @@ function sendKeepAliveRequest() {
 
 function handleKeepAliveResponse(xhr) {
     if (xhr.status >= 400) {
-        console.log('Keep-alive error: ' + error);
         if (++keepAliveErrorCount >= KEEP_ALIVE_ERROR_THRESHOLD_COUNT) {
             teardown();
         }
@@ -312,7 +311,6 @@ function handleKeepAliveResponse(xhr) {
 }
 
 function handleKeepAliveError(error) {
-    console.log('Keep-alive error: ' + error);
     if (++keepAliveErrorCount >= KEEP_ALIVE_ERROR_THRESHOLD_COUNT) {
         teardown();
     }
