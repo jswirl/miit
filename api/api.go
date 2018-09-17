@@ -7,12 +7,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/jswirl/miit/api/middleware"
+	"github.com/jswirl/miit/config"
 )
 
 // The global HTTP router instance and root group.
 var router *gin.Engine
 var root *gin.RouterGroup
 var once sync.Once
+
+// The max size of request body to debug.
+var requestBodyDebugSize int64
+
+func init() {
+	// Load configurations from environment variables.
+	requestBodyDebugSize = config.GetInt64("REQUEST_BODY_DEBUG_SIZE")
+}
 
 // GetRouter returns the global HTTP router instance.
 func GetRouter() *gin.Engine {
@@ -59,6 +68,9 @@ func installCommonMiddleware(group *gin.RouterGroup) {
 	// Install logger middleware, a middleware to log requests.
 	group.Use(middleware.Logger())
 
+	// Install body middleware, a middleware to debug request bodies.
+	group.Use(middleware.Body(requestBodyDebugSize))
+
 	// Install recovery middleware, a middleware to recover & log panics.
 	group.Use(middleware.Recovery())
 }
@@ -68,6 +80,9 @@ func abortWithStatusAndMessage(ctx *gin.Context, status int,
 	format string, arguments ...interface{}) {
 	logger := middleware.GetLogger(ctx)
 	message := fmt.Sprintf(format, arguments...)
-	ctx.AbortWithStatusJSON(status, gin.H{"error": message})
+	ctx.AbortWithStatusJSON(status, gin.H{
+		"error":      message,
+		"request_id": middleware.GetRequestID(ctx),
+	})
 	logger.Error(message)
 }

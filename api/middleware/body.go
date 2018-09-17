@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jswirl/miit/logging"
 )
 
 // Body reads and partially copies the request body for debugging.
@@ -47,6 +48,10 @@ func GetBody(ctx *gin.Context) []byte {
 func readRequestBody(ctx *gin.Context, size int64) []byte {
 	// Obtain logger handle.
 	logger := GetLogger(ctx)
+	if logger == nil {
+		logging.Error("Failed to obtain request logger")
+		return nil
+	}
 
 	// Read the request body into byte slice.
 	body, err := ioutil.ReadAll(ctx.Request.Body)

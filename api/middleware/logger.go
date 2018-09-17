@@ -37,6 +37,7 @@ func Logger() gin.HandlerFunc {
 
 		// Inject the request logger into Gin context.
 		ctx.Set("logger", logger)
+		ctx.Set("request_id", requestID)
 
 		// Do nothing if the request URL is on the blacklist.
 		url := ctx.Request.URL.EscapedPath()
@@ -69,7 +70,7 @@ func Logger() gin.HandlerFunc {
 		// Get response code.
 		code := ctx.Writer.Status()
 
-		// Log the request body on error.
+		// Prepare the request body to be logged on error.
 		var body string
 		if (method == http.MethodPost || method == http.MethodPatch) &&
 			code >= http.StatusBadRequest {
@@ -81,10 +82,8 @@ func Logger() gin.HandlerFunc {
 			logger.Error("Code: [%3d], Latency: [%10v], Body: [%s]",
 				code, elapsed, body)
 		} else {
-			logger.Info("Code: [%3d], Latency: [%10v], Body: [%s]",
-				code, elapsed, body)
+			logger.Info("Code: [%3d], Latency: [%10v]", code, elapsed)
 		}
-
 	}
 }
 
@@ -105,6 +104,32 @@ func GetLogger(ctx *gin.Context) *logging.Logger {
 	}
 
 	return logger
+}
+
+// GetRequestID returns the request ID associated with the current request.
+func GetRequestID(ctx *gin.Context) string {
+	// Obtain the request logger.
+	logger := GetLogger(ctx)
+	if logger == nil {
+		logging.Error("Failed to obtain request logger")
+		return ""
+	}
+
+	// Lookup the request ID.
+	value, exists := ctx.Get("request_id")
+	if !exists {
+		logger.Error("Failed to lookup request ID")
+		return ""
+	}
+
+	// Convert the interface to request ID string.
+	requestID, ok := value.(string)
+	if !ok {
+		logger.Error("Failed to convert to request ID string")
+		return ""
+	}
+
+	return requestID
 }
 
 // getURLPrefix extracts the first path component of the request URL.

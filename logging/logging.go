@@ -3,6 +3,8 @@ package logging
 import (
 	"fmt"
 	"os"
+	"path"
+	"runtime"
 	"time"
 
 	"github.com/jswirl/miit/config"
@@ -53,52 +55,52 @@ func NewLogger(requestID string) (*Logger, error) {
 	return &Logger{requestID}, nil
 }
 
-// Critical logs a message of critical severity.
+// Critical logs a message of critical severity using the static logger..
 func Critical(format string, args ...interface{}) {
-	log(staticLogger, logLevelCritical, format, args...)
+	logWithLineNumber(staticLogger, logLevelCritical, format, args...)
 }
 
-// Critical logs a message of critical severity using the given logger.
+// Critical logs a message of critical severity.
 func (logger *Logger) Critical(format string, args ...interface{}) {
-	log(logger, logLevelCritical, format, args...)
+	logWithLineNumber(logger, logLevelCritical, format, args...)
+}
+
+// Error logs a message of error severity using the static logger.
+func Error(format string, args ...interface{}) {
+	logWithLineNumber(staticLogger, logLevelError, format, args...)
 }
 
 // Error logs a message of error severity.
-func Error(format string, args ...interface{}) {
-	log(staticLogger, logLevelError, format, args...)
-}
-
-// Error logs a message of error severity using the given logger.
 func (logger *Logger) Error(format string, args ...interface{}) {
-	log(logger, logLevelError, format, args...)
+	logWithLineNumber(logger, logLevelError, format, args...)
 }
 
-// Warn logs a message of warning severity.
+// Warn logs a message of warning severity using the static logger.
 func Warn(format string, args ...interface{}) {
 	log(staticLogger, logLevelWarn, format, args...)
 }
 
-// Warn logs a message of warning severity using the given logger.
+// Warn logs a message of warning severity.
 func (logger *Logger) Warn(format string, args ...interface{}) {
 	log(logger, logLevelWarn, format, args...)
 }
 
-// Info logs a message of informational severity.
+// Info logs a message of informational severity using the static logger.
 func Info(format string, args ...interface{}) {
 	log(staticLogger, logLevelInfo, format, args...)
 }
 
-// Info logs a message of informational severity using the given logger.
+// Info logs a message of informational severity.
 func (logger *Logger) Info(format string, args ...interface{}) {
 	log(logger, logLevelInfo, format, args...)
 }
 
-// Debug logs a message of debugging severity.
+// Debug logs a message of debugging severity using the static logger.
 func Debug(format string, args ...interface{}) {
 	log(staticLogger, logLevelDebug, format, args...)
 }
 
-// Debug logs a message of debugging severity using the given logger.
+// Debug logs a message of debugging severity.
 func (logger *Logger) Debug(format string, args ...interface{}) {
 	log(logger, logLevelDebug, format, args...)
 }
@@ -123,4 +125,16 @@ func log(logger *Logger, level uint, format string, args ...interface{}) {
 	fmt.Fprintf(os.Stdout,
 		"\r\x1b[100m%f\x1b[m %s\x1b[m \x1b[100m%12s\x1b[m %s\n",
 		now, logLabels[level], logger.RequestID, message)
+}
+
+// logWithLineNumber performs usual logging but with an extra line number arg.
+func logWithLineNumber(logger *Logger, level uint, format string,
+	args ...interface{}) {
+	// Get caller file name and line number.
+	_, filepath, line, ok := runtime.Caller(2)
+	if ok {
+		filename := path.Base(filepath)
+		format = fmt.Sprintf("%s (%s:%d)", format, filename, line)
+	}
+	log(logger, level, format, args...)
 }
