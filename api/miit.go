@@ -478,14 +478,11 @@ func extractParameters(ctx *gin.Context, typeRequired bool) (
 func miitingMonitor(miiting *miiting) {
 	// Keep a copy of miiting ID, since it may be deleted while sleeping.
 	miitingID := miiting.id
-	defer logging.Debug("miiting [%s] monitor exited", miitingID)
 
-	// Setup delete miiting function.
-	deleteMiiting := func() {
-		logging.Info("Deleting miiting [%s]...", miiting.id)
-		miiting.cancel()
-		miitings.Delete(miiting.id)
-	}
+	// Setup miiting cleanup functions.
+	defer miitings.Delete(miitingID)
+	defer miiting.cancel()
+	defer logging.Info("miiting [%s] monitor exited", miitingID)
 
 	// Keep monitoring miiting status until context is cancelled.
 	for miiting.ctx.Err() == nil {
@@ -493,8 +490,7 @@ func miitingMonitor(miiting *miiting) {
 		nowNano := int64(time.Now().UnixNano())
 		elapsed := nowNano - atomic.LoadInt64(&(miiting.timestamp))
 		if elapsed > keepAliveTimeoutNanoseconds {
-			logging.Info("miiting [%s] has timed-out", miitingID)
-			deleteMiiting()
+			logging.Warn("miiting [%s] has timed-out", miitingID)
 			return
 		}
 
@@ -502,9 +498,9 @@ func miitingMonitor(miiting *miiting) {
 		miiting.tokens.Range(func(token, timestamp interface{}) bool {
 			elapsed := nowNano - timestamp.(int64)
 			if elapsed > keepAliveTimeoutNanoseconds {
-				logging.Info("Token [%s] of [%s] has timed-out",
+				logging.Warn("Token [%s] of [%s] has timed-out",
 					token, miitingID)
-				deleteMiiting()
+				miiting.cancel()
 				return false
 			}
 
@@ -513,10 +509,10 @@ func miitingMonitor(miiting *miiting) {
 
 		// Sleep until next invalidation check.
 		select {
-		case <-miiting.ctx.Done():
 		case <-time.After(keepAliveTimeout):
 		case <-miiting.deleteChan:
-			deleteMiiting()
+			return
+		case <-miiting.ctx.Done():
 			return
 		}
 	}
