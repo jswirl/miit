@@ -117,7 +117,7 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 
 		// Make sure the meeting is not established and ongoing.
 		// "cafeteria" is reserved for Zhe & Mao.
-		if mapEntriesCount(&miiting.Tokens) >= 2 ||
+		if mapEntriesCount(&(miiting.Tokens)) >= 2 ||
 			miitingID == "cafeteria" {
 			return true
 		}
