@@ -20,35 +20,45 @@ import (
 	"github.com/jswirl/miit/logging"
 )
 
+// syncmap is sync.Map extended with JSON marshalling interface.
+type syncmap struct {
+	sync.Map
+}
+
+// MarshalJSON implements JSON marshalling into list for syncmap.
+func (syncmap *syncmap) MarshalJSON() ([]byte, error) {
+	// Collect all entries into list.
+	entries := []map[string]interface{}{}
+	syncmap.Range(func(key, value interface{}) bool {
+		// Create & insert JSON list entry.
+		entry := map[string]interface{}{key.(string): value}
+		entries = append(entries, entry)
+		return true
+	})
+
+	// Marshal result entries list into JSON bytes.
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return nil, err
+	}
+
+	return jsonBytes, nil
+}
+
 // miiting is the object representing a miiting.
 type miiting struct {
-	// All fields are unexported, no json tag needed.
-	id         string
-	ctx        context.Context
-	cancel     context.CancelFunc
-	timestamp  int64
-	tokens     sync.Map
-	offerChan  chan interface{}
-	answerChan chan interface{}
-	deleteChan chan bool
+	ID         string             `json:"id"`
+	Timestamp  int64              `json:"timestamp"`
+	Tokens     syncmap            `json:"tokens"`
+	ctx        context.Context    `json:"-"`
+	cancel     context.CancelFunc `json:"-"`
+	offerChan  chan interface{}   `json:"-"`
+	answerChan chan interface{}   `json:"-"`
+	deleteChan chan bool          `json:"-"`
 }
 
-// sessionDescription is the model of a offer/answer session description.
-type sessionDescription struct {
-	Name        string           `json:"name"`
-	Description *json.RawMessage `json:"description"`
-}
-
-// iceCandidate is the struct representing an ICE candidate of a peer.
-type iceCandidate struct {
-	Candidate     string `json:"candidate"`
-	SdpMid        string `json:"sdpMid"`
-	SdpMLineIndex uint   `json:"sdpMLineIndex"`
-}
-
-// miitings contains all current miitings. miitingsMutex is used to
-// synchronize deletion of a miiting between multiple goroutines.
-var miitings sync.Map
+// miitings contains all current miitings.
+var miitings syncmap
 
 //go:generate go-assets-builder -p assets -o ../assets/assets.go ../assets
 // miitAssetsServer handles the embedded assets from our in-memory filesystem.
@@ -73,6 +83,10 @@ func init() {
 	// Setup handlers for assets and random miiting requests.
 	GetRoot().GET("/random", RedirectToRandomMiiting)
 	GetRoot().GET("/assets/:asset", GetMiitAsset)
+
+	// Setup handlers for admin module.
+	adminGroup := GetRoot().Group("admin")
+	adminGroup.GET("miitings", ListMiitings)
 
 	// Setup miiting module and register handlers.
 	// TODO: use PushMiitAssets when HTTP/2 server push is ready.
@@ -103,7 +117,7 @@ func RedirectToRandomMiiting(ctx *gin.Context) {
 
 		// Make sure the meeting is not established and ongoing.
 		// "cafeteria" is reserved for Zhe & Mao.
-		if countMiitings(&miiting.tokens) >= 2 ||
+		if mapEntriesCount(&miiting.Tokens) >= 2 ||
 			miitingID == "cafeteria" {
 			return true
 		}
@@ -146,6 +160,21 @@ func GetMiiting(ctx *gin.Context) {
 func GetMiitAsset(ctx *gin.Context) {
 	// Respond with requested asset.
 	miitAssetServer.ServeHTTP(ctx.Writer, ctx.Request)
+}
+
+// ListMiitings returns a list of all current existing miitings.
+func ListMiitings(ctx *gin.Context) {
+	// TODO: enable all request origins for the time being for testing.
+	// Only requests originating from loopback interface are accepted.
+	// if !strings.HasPrefix(ctx.Request.Host, "localhost") &&
+	// 	!strings.HasPrefix(ctx.Request.Host, "127.0.0.1") {
+	// 	abortWithStatusAndMessage(ctx, http.StatusForbidden,
+	// 		"Access to admin API is forbidden")
+	// 	return
+	// }
+
+	// Return the marshalled JSON list of all current miitings.
+	ctx.JSON(http.StatusOK, &miitings)
 }
 
 // PushMiitAssets is the handler for pushing the miit assets to clients.
@@ -208,10 +237,10 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	storedMiiting, _ := miitingIntf.(*miiting)
 	nowNano := int64(time.Now().UnixNano())
 	if !exists {
-		storedMiiting.id = miitingID
-		atomic.StoreInt64(&(storedMiiting.timestamp), nowNano)
-		storedMiiting.tokens = sync.Map{}
-		storedMiiting.tokens.Store(token, nowNano)
+		storedMiiting.ID = miitingID
+		atomic.StoreInt64(&(storedMiiting.Timestamp), nowNano)
+		storedMiiting.Tokens = syncmap{}
+		storedMiiting.Tokens.Store(token, nowNano)
 		storedMiiting.offerChan = make(chan interface{}, 1)
 		storedMiiting.answerChan = make(chan interface{}, 1)
 		storedMiiting.deleteChan = make(chan bool, 2)
@@ -223,9 +252,9 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 	}
 
 	// At most two users are allowed to join a miiting.
-	if countMiitings(&storedMiiting.tokens) < 2 {
+	if mapEntriesCount(&storedMiiting.Tokens) < 2 {
 		// Add to the list of participating user tokens. if
-		storedMiiting.tokens.Store(token, nowNano)
+		storedMiiting.Tokens.Store(token, nowNano)
 		ctx.JSON(http.StatusOK, storedMiiting)
 		return
 	}
@@ -245,8 +274,8 @@ func KeepAlive(ctx *gin.Context) {
 
 	// Update timestamps.
 	nowNano := int64(time.Now().UnixNano())
-	atomic.StoreInt64(&(miiting.timestamp), nowNano)
-	miiting.tokens.Store(token, nowNano)
+	atomic.StoreInt64(&(miiting.Timestamp), nowNano)
+	miiting.Tokens.Store(token, nowNano)
 
 	// Done refreshing timestamps, return empty response.
 	ctx.JSON(http.StatusOK, gin.H{})
@@ -286,10 +315,9 @@ func ReceiveDescription(ctx *gin.Context) {
 	}
 
 	// Read & wait for the SDP to be submitted by the other client.
-	var sdp *sessionDescription
+	var sdp interface{}
 	select {
-	case data := <-sdpChan:
-		sdp, _ = data.(*sessionDescription)
+	case sdp = <-sdpChan:
 	case <-time.After(sdpWaitTimeout):
 	case <-miiting.ctx.Done():
 	}
@@ -315,8 +343,8 @@ func SendDescription(ctx *gin.Context) {
 
 	// Prepare the struct to receive session description entity.
 	sdpEntity := struct {
-		Offer  *sessionDescription `json:"offer,omitempty"`
-		Answer *sessionDescription `json:"answer,omitempty"`
+		Offer  interface{} `json:"offer,omitempty"`
+		Answer interface{} `json:"answer,omitempty"`
 	}{nil, nil}
 
 	// Extract the SDP from request body.
@@ -364,10 +392,9 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	}
 
 	// Read & wait for the SDP to be submitted by the other client.
-	var iceCandidates []*iceCandidate
+	var iceCandidates interface{}
 	select {
-	case data := <-iceCandidatesChan:
-		iceCandidates, _ = data.([]*iceCandidate)
+	case iceCandidates = <-iceCandidatesChan:
 	case <-time.After(sdpWaitTimeout):
 	case <-miiting.ctx.Done():
 	}
@@ -393,7 +420,7 @@ func SendIceCandidates(ctx *gin.Context) {
 
 	// Prepare the struct to receive ICE candidates entity.
 	iceCandidatesEntity := struct {
-		IceCandidates []*iceCandidate `json:"ice_candidates"`
+		IceCandidates []interface{} `json:"ice_candidates"`
 	}{nil}
 
 	// Extract the ICE candidates from request body.
@@ -477,7 +504,7 @@ func extractParameters(ctx *gin.Context, typeRequired bool) (
 // miitingMonitor is the goroutine for monitoring the state of a miiting.
 func miitingMonitor(miiting *miiting) {
 	// Keep a copy of miiting ID, since it may be deleted while sleeping.
-	miitingID := miiting.id
+	miitingID := miiting.ID
 
 	// Setup miiting cleanup functions.
 	defer miitings.Delete(miitingID)
@@ -488,14 +515,14 @@ func miitingMonitor(miiting *miiting) {
 	for miiting.ctx.Err() == nil {
 		// Perform session timeout invalidation.
 		nowNano := int64(time.Now().UnixNano())
-		elapsed := nowNano - atomic.LoadInt64(&(miiting.timestamp))
+		elapsed := nowNano - atomic.LoadInt64(&(miiting.Timestamp))
 		if elapsed > keepAliveTimeoutNanoseconds {
 			logging.Warn("miiting [%s] has timed-out", miitingID)
 			return
 		}
 
 		// Perform individual participant timeout invalidation.
-		miiting.tokens.Range(func(token, timestamp interface{}) bool {
+		miiting.Tokens.Range(func(token, timestamp interface{}) bool {
 			elapsed := nowNano - timestamp.(int64)
 			if elapsed > keepAliveTimeoutNanoseconds {
 				logging.Warn("Token [%s] of [%s] has timed-out",
@@ -521,17 +548,17 @@ func miitingMonitor(miiting *miiting) {
 // Check if the provided token is in our miiting tokens;
 func tokenIsValid(miiting *miiting, token string) bool {
 	// Iterate through all tokens in our miiting.
-	_, exists := miiting.tokens.Load(token)
+	_, exists := miiting.Tokens.Load(token)
 	return exists
 }
 
-// Return number of miitings in existence.
-func countMiitings(m *sync.Map) int {
-	len := 0
-	m.Range(func(key, value interface{}) bool {
-		len++
+// Return number of keys in map.
+func mapEntriesCount(syncmap *syncmap) int {
+	count := 0
+	syncmap.Range(func(key, value interface{}) bool {
+		count++
 		return true
 	})
 
-	return len
+	return count
 }
