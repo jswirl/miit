@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -164,14 +165,13 @@ func GetMiitAsset(ctx *gin.Context) {
 
 // ListMiitings returns a list of all current existing miitings.
 func ListMiitings(ctx *gin.Context) {
-	// TODO: enable all request origins for the time being for testing.
 	// Only requests originating from loopback interface are accepted.
-	// if !strings.HasPrefix(ctx.Request.Host, "localhost") &&
-	// 	!strings.HasPrefix(ctx.Request.Host, "127.0.0.1") {
-	// 	abortWithStatusAndMessage(ctx, http.StatusForbidden,
-	// 		"Access to admin API is forbidden")
-	// 	return
-	// }
+	if !strings.HasPrefix(ctx.Request.Host, "localhost") &&
+		!strings.HasPrefix(ctx.Request.Host, "127.0.0.1") {
+		abortWithStatusAndMessage(ctx, http.StatusForbidden,
+			"Access to admin API is forbidden")
+		return
+	}
 
 	// Return the marshalled JSON list of all current miitings.
 	ctx.JSON(http.StatusOK, &miitings)
