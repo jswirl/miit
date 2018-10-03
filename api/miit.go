@@ -48,14 +48,16 @@ func (syncmap *syncmap) MarshalJSON() ([]byte, error) {
 
 // miiting is the object representing a miiting.
 type miiting struct {
-	ID         string             `json:"id"`
-	Timestamp  int64              `json:"timestamp"`
-	Tokens     syncmap            `json:"tokens"`
-	ctx        context.Context    `json:"-"`
-	cancel     context.CancelFunc `json:"-"`
-	offerChan  chan interface{}   `json:"-"`
-	answerChan chan interface{}   `json:"-"`
-	deleteChan chan bool          `json:"-"`
+	ID            string             `json:"id"`
+	Timestamp     int64              `json:"timestamp"`
+	Tokens        syncmap            `json:"tokens"`
+	ctx           context.Context    `json:"-"`
+	cancel        context.CancelFunc `json:"-"`
+	offerSdpChan  chan interface{}   `json:"-"`
+	offerIceChan  chan interface{}   `json:"-"`
+	answerSdpChan chan interface{}   `json:"-"`
+	answerIceChan chan interface{}   `json:"-"`
+	deleteChan    chan bool          `json:"-"`
 }
 
 // miitings contains all current miitings.
@@ -241,8 +243,10 @@ func CreateAndJoinMiiting(ctx *gin.Context) {
 		atomic.StoreInt64(&(storedMiiting.Timestamp), nowNano)
 		storedMiiting.Tokens = syncmap{}
 		storedMiiting.Tokens.Store(token, nowNano)
-		storedMiiting.offerChan = make(chan interface{}, 1)
-		storedMiiting.answerChan = make(chan interface{}, 1)
+		storedMiiting.offerSdpChan = make(chan interface{}, 1)
+		storedMiiting.offerIceChan = make(chan interface{}, 1)
+		storedMiiting.answerSdpChan = make(chan interface{}, 1)
+		storedMiiting.answerIceChan = make(chan interface{}, 1)
 		storedMiiting.deleteChan = make(chan bool, 2)
 		storedMiiting.ctx, storedMiiting.cancel =
 			context.WithCancel(global.Context)
@@ -305,9 +309,9 @@ func ReceiveDescription(ctx *gin.Context) {
 	// Get the channel cooresponding to our type from our miiting.
 	var sdpChan chan interface{}
 	if sdpType == "offer" {
-		sdpChan = miiting.offerChan
+		sdpChan = miiting.offerSdpChan
 	} else if sdpType == "answer" {
-		sdpChan = miiting.answerChan
+		sdpChan = miiting.answerSdpChan
 	} else {
 		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
 			"Invalid SDP type: [%s]", sdpType)
@@ -355,12 +359,12 @@ func SendDescription(ctx *gin.Context) {
 	}
 
 	// Get the requested SDP from our miiting.
-	if sdpEntity.Offer != nil && miiting.offerChan != nil {
+	if sdpEntity.Offer != nil && miiting.offerSdpChan != nil {
 		// Send the submitted offer over the offer channel.
-		miiting.offerChan <- sdpEntity.Offer
-	} else if sdpEntity.Answer != nil && miiting.answerChan != nil {
+		miiting.offerSdpChan <- sdpEntity.Offer
+	} else if sdpEntity.Answer != nil && miiting.answerSdpChan != nil {
 		// Send the submitted answer over the answer channel.
-		miiting.answerChan <- sdpEntity.Answer
+		miiting.answerSdpChan <- sdpEntity.Answer
 	} else {
 		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
 			"Failed to unmarshal offer / answer from request")
@@ -382,9 +386,9 @@ func ReceiveIceCandidates(ctx *gin.Context) {
 	// Get the channel cooresponding to our type from our miiting.
 	var iceCandidatesChan chan interface{}
 	if sdpType == "offer" {
-		iceCandidatesChan = miiting.offerChan
+		iceCandidatesChan = miiting.offerIceChan
 	} else if sdpType == "answer" {
-		iceCandidatesChan = miiting.answerChan
+		iceCandidatesChan = miiting.answerIceChan
 	} else {
 		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
 			"Invalid SDP type: [%s]", sdpType)
@@ -431,12 +435,12 @@ func SendIceCandidates(ctx *gin.Context) {
 	}
 
 	// Send the submitted ICE candidates over our miiting channel.
-	if sdpType == "offer" && miiting.offerChan != nil {
+	if sdpType == "offer" && miiting.offerIceChan != nil {
 		// Send the submitted ICE candidates over the offer channel.
-		miiting.offerChan <- iceCandidatesEntity.IceCandidates
-	} else if sdpType == "answer" && miiting.answerChan != nil {
+		miiting.offerIceChan <- iceCandidatesEntity.IceCandidates
+	} else if sdpType == "answer" && miiting.answerIceChan != nil {
 		// Send the submitted ICE candidates over the answer channel.
-		miiting.answerChan <- iceCandidatesEntity.IceCandidates
+		miiting.answerIceChan <- iceCandidatesEntity.IceCandidates
 	} else {
 		abortWithStatusAndMessage(ctx, http.StatusBadRequest,
 			"Invalid SDP type: [%s]", sdpType)
