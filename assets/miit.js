@@ -57,22 +57,10 @@ var peerConnectionConfig = {
         {
             'urls': [
                 'stun:stun.l.google.com:19302',
-                'stun:stun.services.mozilla.com',
-                // 'stun:stunserver.org',
+                'stun:stunserver.org',
+                // 'stun:stun.services.mozilla.com',
                 // 'stun:stun.xten.com',
             ],
-        },
-        {
-            // TODO: setup TURN servers.
-            // Borrow these for testing for the time being.
-            'urls': [
-                'turn:173.194.203.127:19305?transport=udp',
-                'turn:[2607:f8b0:400e:c05::7f]:19305?transport=udp',
-                'turn:173.194.203.127:19305?transport=tcp',
-                'turn:[2607:f8b0:400e:c05::7f]:19305?transport=tcp',
-            ],
-            'username': 'CMrw7dwFEgbAETfdivQYzc/s6OMTIICjBQ',
-            'credential':'Rdg4lTerPbdb9HDWPvBn7DgHXiA=',
         },
     ],
     'bundlePolicy': 'balanced',
