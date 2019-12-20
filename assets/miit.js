@@ -102,10 +102,12 @@ function main() {
     // Prompt user for name and save to cookies.
     localName = getCookie(miitingID + '.username');
     if (localName == null || localName.length <= 0) {
-        localName = prompt('Please enter your name:', localName);
+        localName = prompt('Please enter your name:', 'anonymous');
         // Stop execution if user clicked cancel.
         if (localName == null)
             return;
+        if (localName.length <= 0)
+            localName = 'anonymous';
         document.cookie = miitingID + '.username=' + localName;
     }
 
